@@ -205,18 +205,84 @@ class CamaraAPIClient:
 
 
 class SenadoAPIClient:
-    """Cliente para API do Senado Federal"""
+    """
+    Cliente para API de Dados Abertos do Senado Federal
+
+    Documentação: https://legis.senado.leg.br/dadosabertos/api-docs/swagger-ui/index.html
+    A API foi modernizada e agora usa FastAPI com endpoints REST/JSON.
+    """
 
     BASE_URL = settings.SENADO_API_URL
 
-    async def search_matters(
+    async def search_legislation(
+        self,
+        keywords: Optional[str] = None,
+        year: Optional[int] = None,
+        tipo: Optional[str] = None,  # PLS, PEC, etc
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Buscar legislação no Senado
+
+        Args:
+            keywords: Palavras-chave para busca
+            year: Ano da legislação
+            tipo: Tipo de legislação (PLS, PEC, etc)
+            limit: Limite de resultados
+
+        Returns:
+            Lista de legislações encontradas
+        """
+        try:
+            params = {}
+
+            if keywords:
+                params["busca"] = keywords
+            if year:
+                params["ano"] = year
+            if tipo:
+                params["tipo"] = tipo
+
+            # A API do Senado modernizada usa endpoints REST
+            # Endpoint: /legislacao ou /materia (dependendo da versão)
+            async with aiohttp.ClientSession() as session:
+                # Tentar endpoint de legislação
+                async with session.get(
+                    f"{self.BASE_URL}/legislacao",
+                    params=params,
+                    headers={"Accept": "application/json"}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # A estrutura pode variar, adaptar conforme necessário
+                        if isinstance(data, list):
+                            return data[:limit]
+                        elif isinstance(data, dict):
+                            return data.get("dados", data.get("items", []))[:limit]
+                        return []
+                    elif response.status == 404:
+                        # Tentar endpoint alternativo de matérias
+                        return await self._search_matters_legacy(keywords, year, limit)
+                    else:
+                        response.raise_for_status()
+                        return []
+
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Erro de conexão ao buscar legislação do Senado: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"Erro ao buscar legislação do Senado: {str(e)}")
+            return []
+
+    async def _search_matters_legacy(
         self,
         keywords: Optional[str] = None,
         year: Optional[int] = None,
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Buscar matérias no Senado
+        Buscar matérias usando endpoint legado (XML)
 
         Args:
             keywords: Palavras-chave
@@ -227,24 +293,234 @@ class SenadoAPIClient:
             Lista de matérias
         """
         try:
-            # A API do Senado usa XML, aqui simplificado
-            # Na prática, você precisaria usar xml.etree ou similar
-            params = {
-                "ano": year or datetime.now().year
-            }
+            params = {}
+            if year:
+                params["ano"] = year
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.BASE_URL}/materia/pesquisa/lista",
-                    params=params
+                    params=params,
+                    headers={"Accept": "application/xml, application/json"}
                 ) as response:
-                    response.raise_for_status()
-                    # Processar XML aqui
+                    if response.status == 200:
+                        content_type = response.headers.get("Content-Type", "")
+
+                        # Se for JSON
+                        if "json" in content_type.lower():
+                            data = await response.json()
+                            return data.get("dados", [])[:limit]
+
+                        # Se for XML, processar
+                        elif "xml" in content_type.lower():
+                            xml_content = await response.text()
+                            return self._parse_senado_xml(xml_content, limit)
+
                     return []
 
         except Exception as e:
-            logger.error(f"Erro ao buscar matérias do Senado: {str(e)}")
+            logger.debug(f"Erro ao buscar matérias (legado): {str(e)}")
             return []
+
+    def _parse_senado_xml(self, xml_content: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Parsear XML do Senado (formato legado)
+
+        Args:
+            xml_content: Conteúdo XML
+            limit: Limite de resultados
+
+        Returns:
+            Lista de matérias parseadas
+        """
+        try:
+            root = ET.fromstring(xml_content)
+            matters = []
+
+            # Estrutura XML do Senado pode variar
+            # Adaptar conforme a estrutura real
+            for materia in root.findall('.//Materia')[:limit]:
+                matter_data = {
+                    "id": materia.findtext("Codigo", ""),
+                    "numero": materia.findtext("Numero", ""),
+                    "ano": materia.findtext("Ano", ""),
+                    "tipo": materia.findtext("SiglaSubtipoMateria", ""),
+                    "ementa": materia.findtext("Ementa", ""),
+                    "data_apresentacao": materia.findtext("DataApresentacao", ""),
+                    "autor": materia.findtext("Autor", ""),
+                }
+                matters.append(matter_data)
+
+            return matters
+
+        except ET.ParseError as e:
+            logger.debug(f"Erro ao parsear XML do Senado: {str(e)}")
+            return []
+        except Exception as e:
+            logger.debug(f"Erro ao processar XML: {str(e)}")
+            return []
+
+    async def get_legislation_by_id(
+        self,
+        legislation_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Obter detalhes de uma legislação específica
+
+        Args:
+            legislation_id: ID ou código da legislação
+
+        Returns:
+            Detalhes da legislação
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Tentar endpoint moderno
+                async with session.get(
+                    f"{self.BASE_URL}/legislacao/{legislation_id}",
+                    headers={"Accept": "application/json"}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get("dados", data) if isinstance(data, dict) else data
+                    elif response.status == 404:
+                        # Tentar endpoint de matéria
+                        return await self._get_matter_by_id(legislation_id)
+                    else:
+                        response.raise_for_status()
+                        return None
+
+        except Exception as e:
+            logger.error(
+                f"Erro ao obter legislação {legislation_id}: {str(e)}")
+            return None
+
+    async def _get_matter_by_id(self, matter_id: str) -> Optional[Dict[str, Any]]:
+        """Obter matéria por ID (endpoint legado)"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.BASE_URL}/materia/{matter_id}",
+                    headers={"Accept": "application/json, application/xml"}
+                ) as response:
+                    if response.status == 200:
+                        content_type = response.headers.get("Content-Type", "")
+                        if "json" in content_type.lower():
+                            data = await response.json()
+                            return data.get("dados", data)
+                        else:
+                            xml_content = await response.text()
+                            # Processar XML se necessário
+                            return {"id": matter_id, "raw_xml": xml_content}
+                    return None
+        except Exception as e:
+            logger.debug(f"Erro ao obter matéria {matter_id}: {str(e)}")
+            return None
+
+    async def get_legislation_full_text(
+        self,
+        legislation_id: str
+    ) -> Optional[str]:
+        """
+        Obter texto completo de uma legislação
+
+        Args:
+            legislation_id: ID ou código da legislação
+
+        Returns:
+            Texto completo da legislação
+        """
+        try:
+            # Tentar obter texto completo via endpoint específico
+            async with aiohttp.ClientSession() as session:
+                # Endpoint para texto integral
+                async with session.get(
+                    f"{self.BASE_URL}/legislacao/{legislation_id}/texto-integral",
+                    headers={
+                        "Accept": "application/json, text/plain, application/xml"}
+                ) as response:
+                    if response.status == 200:
+                        content_type = response.headers.get("Content-Type", "")
+
+                        if "json" in content_type.lower():
+                            data = await response.json()
+                            # O texto pode estar em diferentes campos
+                            return data.get("texto", data.get("conteudo", data.get("textoIntegral", "")))
+                        elif "xml" in content_type.lower():
+                            xml_content = await response.text()
+                            # Extrair texto do XML
+                            return self._extract_text_from_senado_xml(xml_content)
+                        else:
+                            # Texto plano
+                            return await response.text()
+
+                # Se não encontrou, tentar obter via detalhes da legislação
+                details = await self.get_legislation_by_id(legislation_id)
+                if details:
+                    # O texto pode estar nos detalhes
+                    return details.get("textoIntegral", details.get("texto", details.get("conteudo", "")))
+
+            return None
+
+        except Exception as e:
+            logger.error(
+                f"Erro ao obter texto completo da legislação {legislation_id}: {str(e)}")
+            return None
+
+    def _extract_text_from_senado_xml(self, xml_content: str) -> Optional[str]:
+        """
+        Extrair texto do XML do Senado
+
+        Args:
+            xml_content: Conteúdo XML
+
+        Returns:
+            Texto extraído
+        """
+        try:
+            root = ET.fromstring(xml_content)
+            text_parts = []
+
+            # Buscar elementos de texto (estrutura pode variar)
+            for elem in root.iter():
+                if elem.text and elem.text.strip():
+                    tag = elem.tag.lower()
+                    # Filtrar tags de metadados
+                    if tag not in ['codigo', 'numero', 'ano', 'data', 'autor']:
+                        text_parts.append(elem.text.strip())
+
+            return "\n".join(text_parts) if text_parts else None
+
+        except ET.ParseError as e:
+            logger.debug(f"Erro ao parsear XML do Senado: {str(e)}")
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao extrair texto: {str(e)}")
+            return None
+
+    async def search_projects_of_law(
+        self,
+        year: Optional[int] = None,
+        keywords: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Buscar projetos de lei (PLS) no Senado
+
+        Args:
+            year: Ano do projeto
+            keywords: Palavras-chave
+            limit: Limite de resultados
+
+        Returns:
+            Lista de projetos de lei
+        """
+        return await self.search_legislation(
+            keywords=keywords,
+            year=year,
+            tipo="PLS",
+            limit=limit
+        )
 
 
 class QueridoDiarioClient:
@@ -697,15 +973,16 @@ class LexMLClient:
                                 # Se for XML, processar
                                 if "xml" in content_type.lower():
                                     xml_content = await response.text()
-                                    
+
                                     # Verificar se é XML SRU (metadados) ou XML LexML (documento completo)
                                     if "searchRetrieveResponse" in xml_content or "srw:" in xml_content:
                                         # É XML SRU (metadados), não o documento completo
                                         # Tentar extrair referência ao documento completo
-                                        logger.debug(f"Recebido XML SRU (metadados) para {urn}, tentando obter documento completo")
+                                        logger.debug(
+                                            f"Recebido XML SRU (metadados) para {urn}, tentando obter documento completo")
                                         # Continuar para próxima URL
                                         continue
-                                    
+
                                     # Extrair texto do XML LexML
                                     text = self._extract_text_from_lexml_xml(
                                         xml_content)
@@ -742,86 +1019,96 @@ class LexMLClient:
     def _extract_text_from_lexml_xml(self, xml_content: str) -> Optional[str]:
         """
         Extrair texto estruturado do XML LexML
-        
+
         O LexML usa uma estrutura XML específica com elementos como:
         - Artigo, Paragrafo, Inciso, Alinea
         - Texto, Rotulo, etc.
-        
+
         Args:
             xml_content: Conteúdo XML do LexML
-            
+
         Returns:
             Texto formatado ou None
         """
         try:
             root = ET.fromstring(xml_content)
-            
+
             # Verificar se é XML SRU (metadados) - não processar
             if root.tag.endswith('searchRetrieveResponse') or 'srw:' in root.tag:
                 return None
-            
+
             # Namespaces comuns do LexML (tentar diferentes variações)
             namespaces_list = [
                 {'lexml': 'http://www.lexml.gov.br/1.0'},
                 {'': 'http://www.lexml.gov.br/1.0'},
                 {},  # Sem namespace
             ]
-            
+
             text_parts = []
-            
+
             # Tentar com diferentes namespaces
             for namespaces in namespaces_list:
                 # Buscar artigos (com diferentes variações de case)
                 for tag_variation in ['Artigo', 'artigo', 'ARTIGO']:
-                    artigos = root.findall(f'.//{tag_variation}', namespaces) if namespaces else root.findall(f'.//{tag_variation}')
+                    artigos = root.findall(
+                        f'.//{tag_variation}', namespaces) if namespaces else root.findall(f'.//{tag_variation}')
                     for artigo in artigos:
                         # Buscar rótulo
                         for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO', 'Label', 'label']:
-                            rotulo = artigo.find(f'.//{rotulo_tag}', namespaces) if namespaces else artigo.find(f'.//{rotulo_tag}')
+                            rotulo = artigo.find(
+                                f'.//{rotulo_tag}', namespaces) if namespaces else artigo.find(f'.//{rotulo_tag}')
                             if rotulo is not None and rotulo.text:
                                 text_parts.append(f"\n{rotulo.text.strip()}")
                                 break
-                        
+
                         # Buscar parágrafos
                         for par_tag in ['Paragrafo', 'paragrafo', 'PARAGRAFO', 'Paragraphe']:
-                            paragrafos = artigo.findall(f'.//{par_tag}', namespaces) if namespaces else artigo.findall(f'.//{par_tag}')
+                            paragrafos = artigo.findall(
+                                f'.//{par_tag}', namespaces) if namespaces else artigo.findall(f'.//{par_tag}')
                             for paragrafo in paragrafos:
                                 # Rótulo do parágrafo
                                 for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO']:
-                                    par_rotulo = paragrafo.find(f'.//{rotulo_tag}', namespaces) if namespaces else paragrafo.find(f'.//{rotulo_tag}')
+                                    par_rotulo = paragrafo.find(
+                                        f'.//{rotulo_tag}', namespaces) if namespaces else paragrafo.find(f'.//{rotulo_tag}')
                                     if par_rotulo is not None and par_rotulo.text:
-                                        text_parts.append(f"\n{par_rotulo.text.strip()}")
+                                        text_parts.append(
+                                            f"\n{par_rotulo.text.strip()}")
                                         break
-                                
+
                                 # Texto do parágrafo
                                 for texto_tag in ['Texto', 'texto', 'TEXTO', 'Text', 'text', 'Conteudo', 'conteudo']:
-                                    texto = paragrafo.find(f'.//{texto_tag}', namespaces) if namespaces else paragrafo.find(f'.//{texto_tag}')
+                                    texto = paragrafo.find(
+                                        f'.//{texto_tag}', namespaces) if namespaces else paragrafo.find(f'.//{texto_tag}')
                                     if texto is not None and texto.text and texto.text.strip():
                                         text_parts.append(texto.text.strip())
                                         break
-                        
+
                         # Buscar incisos
                         for inc_tag in ['Inciso', 'inciso', 'INCISO']:
-                            incisos = artigo.findall(f'.//{inc_tag}', namespaces) if namespaces else artigo.findall(f'.//{inc_tag}')
+                            incisos = artigo.findall(
+                                f'.//{inc_tag}', namespaces) if namespaces else artigo.findall(f'.//{inc_tag}')
                             for inciso in incisos:
                                 # Rótulo do inciso
                                 for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO']:
-                                    inc_rotulo = inciso.find(f'.//{rotulo_tag}', namespaces) if namespaces else inciso.find(f'.//{rotulo_tag}')
+                                    inc_rotulo = inciso.find(
+                                        f'.//{rotulo_tag}', namespaces) if namespaces else inciso.find(f'.//{rotulo_tag}')
                                     if inc_rotulo is not None and inc_rotulo.text:
-                                        text_parts.append(f"\n{inc_rotulo.text.strip()}")
+                                        text_parts.append(
+                                            f"\n{inc_rotulo.text.strip()}")
                                         break
-                                
+
                                 # Texto do inciso
                                 for texto_tag in ['Texto', 'texto', 'TEXTO']:
-                                    texto = inciso.find(f'.//{texto_tag}', namespaces) if namespaces else inciso.find(f'.//{texto_tag}')
+                                    texto = inciso.find(
+                                        f'.//{texto_tag}', namespaces) if namespaces else inciso.find(f'.//{texto_tag}')
                                     if texto is not None and texto.text and texto.text.strip():
                                         text_parts.append(texto.text.strip())
                                         break
-                
+
                 # Se encontrou texto, parar de tentar outros namespaces
                 if text_parts:
                     break
-            
+
             # Se não encontrou estrutura específica, extrair todo o texto de forma genérica
             if not text_parts or len(''.join(text_parts)) < 100:
                 # Função recursiva para extrair todo o texto
@@ -840,23 +1127,24 @@ class LexMLClient:
                     if elem.tail and elem.tail.strip():
                         texts.append(elem.tail.strip())
                     return texts
-                
+
                 all_texts = extract_all_text(root)
                 if all_texts:
                     # Filtrar textos muito curtos ou que parecem ser metadados
-                    filtered_texts = [t for t in all_texts if len(t) > 10 and not t.isdigit()]
+                    filtered_texts = [t for t in all_texts if len(
+                        t) > 10 and not t.isdigit()]
                     if filtered_texts:
                         text_parts.extend(filtered_texts)
-            
+
             # Juntar e limpar
             result = "\n".join(text_parts).strip() if text_parts else None
-            
+
             # Verificar se o resultado é significativo (não apenas metadados)
             if result and len(result) > 200:
                 return result
-            
+
             return None
-            
+
         except ET.ParseError as e:
             logger.debug(f"Erro ao parsear XML LexML: {str(e)}")
             return None
