@@ -251,11 +251,11 @@ export default function ChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Digite sua pergunta sobre legislação..."
-                className="w-full p-4 pr-12 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm bg-white"
+                className="w-full p-4 pr-12 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm bg-white text-gray-900 placeholder:text-gray-500"
                 disabled={isLoading}
               />
               {input.trim() && (
-                <div className="absolute right-3 bottom-3 text-xs text-gray-400">
+                <div className="absolute right-3 bottom-3 text-xs text-gray-500">
                   {input.length} caracteres
                 </div>
               )}
