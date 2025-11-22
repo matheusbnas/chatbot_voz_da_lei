@@ -167,5 +167,39 @@ class ChatService:
             return f"Erro ao simplificar texto: {str(e)}"
 
 
-# Instância global do serviço
+class SimplificationService:
+    """Serviço especializado para simplificação de textos legislativos"""
+    
+    def __init__(self):
+        self.chat_service = ChatService()
+    
+    async def simplify_text(
+        self,
+        text: str,
+        target_level: str = "simple"
+    ) -> Dict[str, Any]:
+        """
+        Simplificar texto legislativo e retornar com metadados
+        
+        Args:
+            text: Texto a ser simplificado
+            target_level: Nível de simplificação (simple, moderate, technical)
+            
+        Returns:
+            Dict com 'simplified_text' e 'reading_time_minutes'
+        """
+        simplified = await self.chat_service.simplify_text(text, target_level)
+        
+        # Calcular tempo de leitura (assumindo ~200 palavras por minuto)
+        word_count = len(simplified.split())
+        reading_time = max(1, round(word_count / 200))
+        
+        return {
+            "simplified_text": simplified,
+            "reading_time_minutes": reading_time
+        }
+
+
+# Instâncias globais dos serviços
 chat_service = ChatService()
+simplification_service = SimplificationService()
