@@ -16,11 +16,7 @@ from app.models.models import (
     DataCollectionJob,
     Base
 )
-from app.integrations.legislative_apis import (
-    lexml_client,
-    camara_client,
-    senado_client
-)
+from app.integrations.legislative_apis import lexml_client
 
 
 class DataCollector:
@@ -128,78 +124,6 @@ class DataCollector:
             logger.error(f"Erro na coleta do LexML: {str(e)}")
             raise
 
-    async def collect_from_camara(
-        self,
-        year: Optional[int] = None,
-        limit: int = 100,
-        job_id: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """
-        Coletar dados da Câmara dos Deputados
-        """
-        try:
-            logger.info(f"Iniciando coleta da Câmara - ano: {year}")
-
-            propositions = await camara_client.get_trending_topics(limit=limit)
-
-            collected = 0
-            failed = 0
-
-            for prop in propositions:
-                try:
-                    # Verificar se já existe
-                    existing = self.db.query(Legislation).filter(
-                        Legislation.external_id == str(prop.get("id"))
-                    ).first()
-
-                    if existing:
-                        continue
-
-                    # Criar novo registro
-                    legislation = Legislation(
-                        external_id=str(prop.get("id", "")),
-                        source="camara",
-                        type=prop.get("siglaTipo", "PL"),
-                        number=str(prop.get("numero", "")),
-                        year=prop.get("ano", datetime.now().year),
-                        title=prop.get("ementa", ""),
-                        summary=prop.get("ementa", ""),
-                        status=prop.get("statusProposicao", {}).get(
-                            "descricaoTramitacao"),
-                        author=None,  # Será preenchido depois
-                        presentation_date=prop.get("dataApresentacao"),
-                        raw_data=prop,
-                        created_at=datetime.utcnow()
-                    )
-
-                    self.db.add(legislation)
-                    self.db.commit()
-                    collected += 1
-
-                    if job_id:
-                        job = self.db.query(DataCollectionJob).filter_by(
-                            id=job_id).first()
-                        if job:
-                            job.processed_items = collected
-                            self.db.commit()
-
-                except Exception as e:
-                    logger.error(
-                        f"Erro ao salvar proposição {prop.get('id')}: {str(e)}")
-                    failed += 1
-                    self.db.rollback()
-
-            logger.info(
-                f"Coleta da Câmara concluída: {collected} coletados, {failed} falhas")
-            return {
-                "collected": collected,
-                "failed": failed,
-                "total": len(propositions)
-            }
-
-        except Exception as e:
-            logger.error(f"Erro na coleta da Câmara: {str(e)}")
-            raise
 
     def _extract_number(self, title: str) -> str:
         """Extrair número do título (ex: 'PLS nº 489/2008' -> '489')"""
@@ -252,14 +176,8 @@ class DataCollector:
                     limit=job.parameters.get("limit", 100),
                     job_id=job_id
                 )
-            elif job.job_type == "camara":
-                result = await self.collect_from_camara(
-                    year=job.parameters.get("year"),
-                    limit=job.parameters.get("limit", 100),
-                    job_id=job_id
-                )
             else:
-                raise ValueError(f"Tipo de job desconhecido: {job.job_type}")
+                raise ValueError(f"Tipo de job desconhecido: {job.job_type}. Apenas 'lexml' é suportado.")
 
             job.status = "completed"
             job.completed_at = datetime.utcnow()

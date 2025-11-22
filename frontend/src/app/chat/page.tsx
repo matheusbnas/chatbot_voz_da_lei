@@ -1,20 +1,20 @@
-'use client';
+"use client";
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, Volume2, Mic, Sparkles, Home, RotateCcw, MessageSquare } from 'lucide-react';
-import Link from 'next/link';
-import { chatApi, ChatMessage } from '@/services/api';
+import { useState, useRef, useEffect } from "react";
+import { Send, Volume2, Mic, Sparkles, Home, RotateCcw, MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { chatApi, ChatMessage } from "@/services/api";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -31,13 +31,13 @@ export default function ChatPage() {
     if (!messageText.trim() || isLoading) return;
 
     const userMessage: ChatMessage = {
-      role: 'user',
+      role: "user",
       content: messageText,
       timestamp: new Date().toISOString(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
     setIsLoading(true);
 
     try {
@@ -48,31 +48,56 @@ export default function ChatPage() {
       });
 
       const assistantMessage: ChatMessage = {
-        role: 'assistant',
+        role: "assistant",
         content: response.message,
         timestamp: new Date().toISOString(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
-      
+      setMessages((prev) => [...prev, assistantMessage]);
+
       if (response.suggestions) {
         setSuggestions(response.suggestions);
       }
-    } catch (error) {
-      console.error('Error sending message:', error);
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      let errorContent = "Desculpe, ocorreu um erro ao processar sua mensagem.";
+
+      // Try to get a user-friendly error message
+      if (error?.formattedMessage) {
+        errorContent = error.formattedMessage;
+      } else if (error?.response?.data?.detail) {
+        errorContent = error.response.data.detail;
+      } else if (error?.response?.data?.message) {
+        errorContent = error.response.data.message;
+      } else if (error?.message) {
+        errorContent = error.message;
+      } else if (typeof error === "string") {
+        errorContent = error;
+      }
+
+      // Format authentication errors more clearly
+      if (
+        errorContent.includes("401") ||
+        errorContent.includes("authentication_error") ||
+        errorContent.includes("x-api-key")
+      ) {
+        errorContent =
+          "Erro de autenticação: Verifique se as chaves de API estão configuradas corretamente no servidor.";
+      }
+
       const errorMessage: ChatMessage = {
-        role: 'assistant',
-        content: 'Desculpe, ocorreu um erro. Tente novamente.',
+        role: "assistant",
+        content: errorContent,
         timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
@@ -161,25 +186,45 @@ export default function ChatPage() {
           {messages.map((message, idx) => (
             <div
               key={idx}
-              className={`flex items-start gap-3 animate-fade-in ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex items-start gap-3 animate-fade-in ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {message.role === 'assistant' && (
+              {message.role === "assistant" && (
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 rounded-xl flex-shrink-0 shadow-md">
                   <Sparkles className="w-5 h-5 text-white" />
                 </div>
               )}
               <div
                 className={`max-w-2xl p-4 rounded-2xl shadow-sm ${
-                  message.role === 'user'
-                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-blue-200'
-                    : 'bg-white border border-gray-100'
+                  message.role === "user"
+                    ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-blue-200"
+                    : "bg-white border border-gray-100"
                 }`}
               >
-                <p className={`whitespace-pre-wrap leading-relaxed ${
-                  message.role === 'user' ? 'text-white' : 'text-gray-800'
-                }`}>{message.content}</p>
+                <div className="break-words overflow-wrap-anywhere min-w-0">
+                  {message.content.includes("Error") ||
+                  message.content.includes("erro") ||
+                  message.content.includes("401") ||
+                  message.content.includes("authentication_error") ? (
+                    <div className="space-y-2">
+                      <p className="font-semibold mb-2">
+                        {message.role === "assistant"
+                          ? "Erro ao processar mensagem:"
+                          : "Erro:"}
+                      </p>
+                      <div className="text-sm bg-red-50 border border-red-200 p-3 rounded overflow-x-auto max-w-full">
+                        <pre className="whitespace-pre-wrap break-all text-red-800 font-mono text-xs">
+                          {message.content}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className={`whitespace-pre-wrap leading-relaxed break-words overflow-wrap-anywhere ${
+                      message.role === "user" ? "text-white" : "text-gray-800"
+                    }`}>{message.content}</p>
+                  )}
+                </div>
               </div>
-              {message.role === 'user' && (
+              {message.role === "user" && (
                 <div className="bg-gray-200 p-2.5 rounded-xl flex-shrink-0">
                   <MessageSquare className="w-5 h-5 text-gray-700" />
                 </div>
@@ -195,8 +240,8 @@ export default function ChatPage() {
               <div className="bg-white border border-gray-100 shadow-sm p-5 rounded-2xl">
                 <div className="flex space-x-2">
                   <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce" />
-                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
                 </div>
               </div>
             </div>
@@ -237,8 +282,8 @@ export default function ChatPage() {
               onClick={toggleRecording}
               className={`p-3 rounded-xl transition-all flex-shrink-0 ${
                 isRecording
-                  ? 'bg-red-100 hover:bg-red-200 text-red-600'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  ? "bg-red-100 hover:bg-red-200 text-red-600"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
               }`}
               title="Gravar áudio"
             >

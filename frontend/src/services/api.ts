@@ -10,6 +10,26 @@ const api = axios.create({
   },
 });
 
+// Add response interceptor for better error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Format error message for better display
+    if (error.response) {
+      // Server responded with error status
+      const errorMessage = error.response.data?.detail || error.response.data?.message || error.message;
+      error.formattedMessage = errorMessage;
+    } else if (error.request) {
+      // Request was made but no response received
+      error.formattedMessage = 'Erro de conexão. Verifique se o servidor está rodando.';
+    } else {
+      // Something else happened
+      error.formattedMessage = error.message || 'Erro desconhecido';
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Types
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';

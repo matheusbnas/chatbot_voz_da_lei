@@ -306,7 +306,7 @@ class LexMLClient:
 
     def _parse_lexml_xml(self, xml_content: str) -> List[Dict[str, Any]]:
         """
-        Parsear resposta XML do LexML
+        Parsear resposta XML do LexML baseado na estrutura SRU real
 
         Args:
             xml_content: Conteúdo XML da resposta
@@ -332,16 +332,22 @@ class LexMLClient:
 
                 doc = {}
 
-                # Extrair campos principais
+                # Extrair campos principais (sem namespace para campos customizados)
                 tipo_doc = record_data.find('tipoDocumento')
                 if tipo_doc is not None:
                     doc['tipo_documento'] = tipo_doc.text
+
+                # Facet tipo documento
+                facet_tipo = record_data.find('facet-tipoDocumento')
+                if facet_tipo is not None:
+                    doc['facet_tipo_documento'] = facet_tipo.text
 
                 urn = record_data.find('urn')
                 if urn is not None:
                     doc['urn'] = urn.text
                     doc['identifier'] = urn.text
 
+                # Campos Dublin Core (com namespace)
                 title = record_data.find('.//dc:title', namespaces)
                 if title is not None:
                     doc['title'] = title.text
@@ -354,14 +360,28 @@ class LexMLClient:
                 if date is not None:
                     doc['date'] = date.text
 
+                dc_type = record_data.find('.//dc:type', namespaces)
+                if dc_type is not None:
+                    doc['dc_type'] = dc_type.text
+
+                # Campos customizados do LexML (sem namespace)
                 localidade = record_data.find('localidade')
                 if localidade is not None:
                     doc['localidade'] = localidade.text
+
+                facet_localidade = record_data.find('facet-localidade')
+                if facet_localidade is not None:
+                    doc['facet_localidade'] = facet_localidade.text
 
                 autoridade = record_data.find('autoridade')
                 if autoridade is not None:
                     doc['autoridade'] = autoridade.text
 
+                facet_autoridade = record_data.find('facet-autoridade')
+                if facet_autoridade is not None:
+                    doc['facet_autoridade'] = facet_autoridade.text
+
+                # Identifier Dublin Core
                 identifier = record_data.find('.//dc:identifier', namespaces)
                 if identifier is not None:
                     doc['lexml_id'] = identifier.text
@@ -579,19 +599,78 @@ class LexMLClient:
         Obter documento específico por URN
 
         Args:
-            urn: URN completa do documento
+            urn: URN completa do documento (ex: 'urn:lex:br:senado.federal:projeto.lei;pls:2008;489')
 
         Returns:
             Documento ou None
         """
-        # Extrair parte relevante da URN para busca
+        # Normalizar URN para busca
         if "urn:lex:" in urn:
-            urn_part = urn.replace("urn:lex:br:", "").replace("urn:lex:", "")
+            # Extrair parte relevante da URN para busca
+            # Ex: "urn:lex:br:senado.federal:projeto.lei;pls:2008;489" -> "senado.federal pls 2008"
+            urn_clean = urn.replace("urn:lex:br:", "").replace("urn:lex:", "")
+            # Extrair componentes da URN
+            parts = urn_clean.split(":")
+            if len(parts) >= 2:
+                # Formato: senado.federal:projeto.lei;pls:2008;489
+                authority = parts[0]  # senado.federal
+                doc_type = parts[1].split(";")[0]  # projeto.lei
+                if "pls" in doc_type or "pl" in doc_type.lower():
+                    # Tentar extrair número e ano
+                    if len(parts) > 2:
+                        year = parts[2] if parts[2].isdigit() else None
+                        number = parts[3] if len(parts) > 3 else None
+                        if year:
+                            query = f'urn="{authority} pls {year}"'
+                        else:
+                            query = f'urn="{urn_clean}"'
+                    else:
+                        query = f'urn="{urn_clean}"'
+                else:
+                    query = f'urn="{urn_clean}"'
+            else:
+                query = f'urn="{urn_clean}"'
         else:
-            urn_part = urn
+            query = f'urn="{urn}"'
 
-        result = await self.search_by_urn(urn_part, limit=1)
-        return result[0] if result else None
+        result = await self.search(query, maximum_records=1)
+        records = result.get("records", [])
+        if records:
+            doc = records[0]
+            # Tentar buscar texto completo se disponível
+            full_text = await self._get_document_full_text(doc.get("urn"))
+            if full_text:
+                doc['full_text'] = full_text
+            return doc
+        return None
+
+    async def _get_document_full_text(self, urn: Optional[str]) -> Optional[str]:
+        """
+        Tentar obter o texto completo do documento através da URN
+
+        Args:
+            urn: URN do documento
+
+        Returns:
+            Texto completo ou None
+        """
+        if not urn:
+            return None
+
+        try:
+            # O LexML pode fornecer o texto completo através de uma URL específica
+            # Baseado na URN, podemos construir a URL do documento
+            # Exemplo: https://www.lexml.gov.br/documento/urn:lex:br:senado.federal:projeto.lei;pls:2008;489
+
+            # Por enquanto, retornamos None pois precisaríamos testar a API real
+            # para ver como acessar o texto completo
+            # TODO: Implementar busca do texto completo quando descobrirmos o endpoint correto
+            return None
+
+        except Exception as e:
+            logger.debug(
+                f"Não foi possível obter texto completo para URN {urn}: {str(e)}")
+            return None
 
 
 # Instâncias globais

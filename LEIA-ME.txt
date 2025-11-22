@@ -88,16 +88,24 @@ npm run dev
 
 ## 🔑 Chaves de API Necessárias
 
-Para funcionar completamente, você precisa de:
+Para funcionar completamente, você precisa de pelo menos uma das seguintes chaves:
 
-1. **OpenAI API Key** (opcional, mas recomendado)
+1. **Groq API Key** (GRATUITO - Recomendado para começar)
+   - Obtenha em: https://console.groq.com/keys
+   - Adicione em: `backend/.env` como `GROQ_API_KEY`
+   - Modelo: Llama 3.3 70B (gratuito e rápido)
+
+2. **OpenAI API Key** (pago, mas com plano gratuito limitado)
    - Obtenha em: https://platform.openai.com/api-keys
    - Adicione em: `backend/.env` como `OPENAI_API_KEY`
+   - Modelo: GPT-4o-mini (mais barato)
 
-2. **Anthropic API Key** (opcional, mas recomendado)
+3. **Anthropic API Key** (pago)
    - Obtenha em: https://console.anthropic.com/settings/keys
    - Adicione em: `backend/.env` como `ANTHROPIC_API_KEY`
+   - Modelo: Claude 3 Sonnet
 
+**Prioridade de uso:** Groq > Anthropic > OpenAI
 **Nota:** O sistema pode funcionar sem as chaves de IA, mas as funcionalidades de simplificação e chat estarão limitadas.
 
 ## 📚 Estrutura do Projeto

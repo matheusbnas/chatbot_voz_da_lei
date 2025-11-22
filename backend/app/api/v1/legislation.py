@@ -1,13 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from loguru import logger
+from datetime import datetime
 
 from app.schemas.schemas import LegislationSimplified, LegislationDetail
-from app.integrations.legislative_apis import (
-    camara_client,
-    querido_diario_client,
-    lexml_client
-)
+from app.integrations.legislative_apis import lexml_client
 
 router = APIRouter()
 
@@ -17,22 +14,29 @@ async def get_trending_legislation(limit: int = Query(10, ge=1, le=50)):
     """
     Obter legislações em destaque
 
-    Retorna as proposições mais recentes e relevantes.
-    Busca no LexML e na Câmara dos Deputados.
+    Retorna as proposições mais recentes e relevantes do LexML.
     """
     try:
         result = []
 
         # Buscar no LexML - projetos de lei recentes
-        from datetime import datetime
         current_year = datetime.now().year
 
+        # Buscar projetos de lei do ano atual
         lexml_projects = await lexml_client.search_projects_of_law(
             year=current_year,
-            limit=limit // 2
+            limit=limit
         )
 
-        for doc in lexml_projects:
+        # Se não houver projetos suficientes, buscar também leis
+        if len(lexml_projects) < limit:
+            lexml_laws = await lexml_client.search_laws(
+                year=current_year,
+                limit=limit - len(lexml_projects)
+            )
+            lexml_projects.extend(lexml_laws)
+
+        for doc in lexml_projects[:limit]:
             # Extrair número e ano do título ou URN
             title = doc.get("title", "")
             urn = doc.get("urn", "")
@@ -48,9 +52,15 @@ async def get_trending_legislation(limit: int = Query(10, ge=1, le=50)):
                     number_part = parts[1].split("/")[0].strip()
                     number = number_part
 
+            # Usar hash da URN como ID se não houver lexml_id
+            doc_id = doc.get("lexml_id")
+            if not doc_id:
+                # ID numérico baseado no hash
+                doc_id = abs(hash(urn)) % (10 ** 10)
+
             result.append(LegislationSimplified(
-                id=doc.get("lexml_id", hash(urn)),
-                type=doc.get("tipo_documento", "PL"),
+                id=int(doc_id) if doc_id else abs(hash(urn)) % (10 ** 10),
+                type=doc.get("tipo_documento", "Documento"),
                 number=number or "N/A",
                 year=int(year) if year else current_year,
                 title=title,
@@ -62,24 +72,6 @@ async def get_trending_legislation(limit: int = Query(10, ge=1, le=50)):
                 tags=None
             ))
 
-        # Buscar da Câmara como complemento
-        if len(result) < limit:
-            propositions = await camara_client.get_trending_topics(limit=limit - len(result))
-
-            for prop in propositions:
-                result.append(LegislationSimplified(
-                    id=prop.get("id"),
-                    type=prop.get("siglaTipo", "PL"),
-                    number=str(prop.get("numero", "")),
-                    year=prop.get("ano", 0),
-                    title=prop.get("ementa", ""),
-                    summary=prop.get("ementa", "")[:200] + "...",
-                    status=None,
-                    author=None,
-                    presentation_date=None,
-                    tags=None
-                ))
-
         return result[:limit]
 
     except Exception as e:
@@ -90,39 +82,84 @@ async def get_trending_legislation(limit: int = Query(10, ge=1, le=50)):
 @router.get("/{legislation_id}", response_model=LegislationDetail)
 async def get_legislation_detail(legislation_id: int):
     """
-    Obter detalhes de uma legislação específica
+    Obter detalhes de uma legislação específica do LexML
 
     Args:
-        legislation_id: ID da proposição
+        legislation_id: ID da legislação (lexml_id ou hash da URN)
     """
     try:
-        # Buscar detalhes
-        details = await camara_client.get_proposition_details(legislation_id)
+        # Buscar por ID no LexML usando busca genérica
+        # Como o LexML não tem endpoint direto por ID, vamos buscar por palavras-chave
+        # ou usar a busca por URN se o ID for uma URN
 
-        if not details:
+        # Por enquanto, vamos buscar legislações recentes e filtrar por ID
+        # Em produção, seria melhor ter um cache ou banco de dados local
+        current_year = datetime.now().year
+
+        # Buscar em projetos de lei
+        projects = await lexml_client.search_projects_of_law(
+            year=current_year,
+            limit=100
+        )
+
+        # Buscar em leis
+        laws = await lexml_client.search_laws(
+            year=current_year,
+            limit=100
+        )
+
+        all_docs = projects + laws
+
+        # Encontrar documento pelo ID
+        doc = None
+        for d in all_docs:
+            doc_id = d.get("lexml_id")
+            if doc_id and str(doc_id) == str(legislation_id):
+                doc = d
+                break
+            # Também verificar por hash da URN
+            if not doc_id:
+                urn = d.get("urn", "")
+                if urn and abs(hash(urn)) % (10 ** 10) == legislation_id:
+                    doc = d
+                    break
+
+        if not doc:
             raise HTTPException(
-                status_code=404, detail="Legislação não encontrada")
+                status_code=404, detail="Legislação não encontrada no LexML")
 
-        # Buscar autores
-        authors = await camara_client.get_proposition_authors(legislation_id)
-        author_names = [a.get("nome", "") for a in authors[:3]]
+        # Buscar texto completo se disponível
+        full_text = doc.get("full_text")
+        if not full_text and doc.get("urn"):
+            full_text = await lexml_client._get_document_full_text(doc.get("urn"))
+
+        # Extrair número do título
+        title = doc.get("title", "")
+        number = ""
+        if "nº" in title or "Nº" in title:
+            parts = title.split("nº") if "nº" in title else title.split("Nº")
+            if len(parts) > 1:
+                number_part = parts[1].split("/")[0].strip()
+                number = number_part
+
+        year = doc.get("date", current_year)
 
         return LegislationDetail(
-            id=details.get("id"),
-            type=details.get("siglaTipo", ""),
-            number=str(details.get("numero", "")),
-            year=details.get("ano", 0),
-            title=details.get("ementa", ""),
-            summary=details.get("ementa", ""),
-            full_text=None,  # TODO: Implementar extração de texto
+            id=int(doc.get("lexml_id")) if doc.get("lexml_id") else abs(
+                hash(doc.get("urn", ""))) % (10 ** 10),
+            type=doc.get("tipo_documento", "Documento"),
+            number=number or "N/A",
+            year=int(year) if year else current_year,
+            title=title,
+            summary=doc.get("description", ""),
+            full_text=full_text,
             simplified_text=None,
-            status=details.get("statusProposicao", {}).get(
-                "descricaoTramitacao"),
-            author=", ".join(author_names) if author_names else None,
-            presentation_date=details.get("dataApresentacao"),
-            last_update=details.get("statusProposicao", {}).get("dataHora"),
-            tags=details.get("keywords"),
-            raw_data=details
+            status=None,
+            author=doc.get("autoridade"),
+            presentation_date=None,
+            last_update=None,
+            tags=None,
+            raw_data=doc
         )
 
     except HTTPException:
@@ -140,7 +177,7 @@ async def get_municipal_legislation(
     limit: int = Query(10, ge=1, le=50)
 ):
     """
-    Buscar legislação municipal
+    Buscar legislação municipal no LexML
 
     Args:
         state: Sigla do estado (ex: SP, RJ)
@@ -149,43 +186,33 @@ async def get_municipal_legislation(
         limit: Número de resultados
     """
     try:
-        gazettes = await querido_diario_client.search_gazettes(
-            city=city,
-            state=state,
-            keywords=keywords
+        # Buscar no LexML usando palavras-chave e filtro de localidade
+        query_parts = []
+
+        if keywords:
+            query_parts.append(
+                f'dc.title all "{keywords}" or dc.description all "{keywords}"')
+
+        # Filtrar por localidade (municipal)
+        query_parts.append(f'localidade="{city}"')
+
+        query = " and ".join(
+            query_parts) if query_parts else f'localidade="{city}"'
+
+        result = await lexml_client.search(
+            query=query,
+            maximum_records=limit
         )
 
         return {
             "state": state,
             "city": city,
-            "total": len(gazettes),
-            "results": gazettes[:limit]
+            "total": result.get("total", 0),
+            "results": result.get("records", [])[:limit]
         }
 
     except Exception as e:
         logger.error(f"Erro ao buscar legislação municipal: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{legislation_id}/votes")
-async def get_legislation_votes(legislation_id: int):
-    """
-    Obter votações de uma legislação
-
-    Args:
-        legislation_id: ID da proposição
-    """
-    try:
-        votes = await camara_client.get_proposition_votes(legislation_id)
-
-        return {
-            "legislation_id": legislation_id,
-            "total_votes": len(votes),
-            "votes": votes
-        }
-
-    except Exception as e:
-        logger.error(f"Erro ao buscar votações: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

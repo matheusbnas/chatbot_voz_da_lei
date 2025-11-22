@@ -27,26 +27,36 @@ class ChatService:
             return
 
         try:
-            # Tentar usar Anthropic primeiro, depois OpenAI
-            if settings.ANTHROPIC_API_KEY:
+            # Prioridade: Groq (gratuito) > Anthropic > OpenAI
+            if settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip():
+                # Groq usa API compatível com OpenAI
+                self.llm = ChatOpenAI(
+                    model="llama-3.1-70b-versatile",  # Modelo gratuito do Groq
+                    temperature=0.7,
+                    api_key=settings.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1"
+                )
+                logger.info("Modelo Groq (Llama 3.1 70B) inicializado")
+            elif settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY.strip():
                 self.llm = ChatAnthropic(
                     model="claude-3-sonnet-20240229",
                     temperature=0.7,
                     api_key=settings.ANTHROPIC_API_KEY
                 )
                 logger.info("Modelo Anthropic Claude inicializado")
-            elif settings.OPENAI_API_KEY:
+            elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
                 self.llm = ChatOpenAI(
-                    model="gpt-4",
+                    model="gpt-4o-mini",  # Modelo mais barato da OpenAI
                     temperature=0.7,
                     api_key=settings.OPENAI_API_KEY
                 )
-                logger.info("Modelo OpenAI GPT-4 inicializado")
+                logger.info("Modelo OpenAI GPT-4o-mini inicializado")
             else:
                 logger.warning(
                     "Nenhuma chave de API configurada. Chat desabilitado.")
         except Exception as e:
             logger.error(f"Erro ao inicializar modelo de linguagem: {str(e)}")
+            self.llm = None
 
     async def chat(
         self,
@@ -65,12 +75,20 @@ class ChatService:
         """
         if not self.llm:
             return {
-                "message": "Desculpe, o serviço de chat não está disponível no momento. Por favor, configure as chaves de API (OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env",
+                "message": "Desculpe, o serviço de chat não está disponível no momento. Por favor, configure uma chave de API (GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env do backend.",
                 "sources": [],
                 "suggestions": []
             }
 
         try:
+            # Verificar se o LLM está disponível antes de processar
+            if not self.llm:
+                return {
+                    "message": "O serviço de chat não está disponível. Por favor, configure uma chave de API (GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env do backend. Veja o arquivo .env.example para mais informações.",
+                    "sources": [],
+                    "suggestions": []
+                }
+
             # Preparar mensagens para o modelo
             messages = []
 
@@ -112,9 +130,20 @@ class ChatService:
             }
 
         except Exception as e:
-            logger.error(f"Erro ao processar chat: {str(e)}")
+            error_msg = str(e)
+            logger.error(f"Erro ao processar chat: {error_msg}")
+
+            # Tratar erros de autenticação especificamente
+            if "401" in error_msg or "authentication_error" in error_msg or "invalid" in error_msg.lower() and "api" in error_msg.lower():
+                return {
+                    "message": "Erro de autenticação: As chaves de API não estão configuradas corretamente. Por favor, configure GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY no arquivo .env do backend.",
+                    "sources": [],
+                    "suggestions": []
+                }
+
+            # Tratar outros erros de forma genérica
             return {
-                "message": f"Desculpe, ocorreu um erro ao processar sua mensagem: {str(e)}",
+                "message": "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde.",
                 "sources": [],
                 "suggestions": []
             }
@@ -169,10 +198,10 @@ class ChatService:
 
 class SimplificationService:
     """Serviço especializado para simplificação de textos legislativos"""
-    
+
     def __init__(self):
         self.chat_service = ChatService()
-    
+
     async def simplify_text(
         self,
         text: str,
@@ -180,20 +209,20 @@ class SimplificationService:
     ) -> Dict[str, Any]:
         """
         Simplificar texto legislativo e retornar com metadados
-        
+
         Args:
             text: Texto a ser simplificado
             target_level: Nível de simplificação (simple, moderate, technical)
-            
+
         Returns:
             Dict com 'simplified_text' e 'reading_time_minutes'
         """
         simplified = await self.chat_service.simplify_text(text, target_level)
-        
+
         # Calcular tempo de leitura (assumindo ~200 palavras por minuto)
         word_count = len(simplified.split())
         reading_time = max(1, round(word_count / 200))
-        
+
         return {
             "simplified_text": simplified,
             "reading_time_minutes": reading_time
