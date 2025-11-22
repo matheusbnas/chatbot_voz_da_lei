@@ -16,7 +16,6 @@ class Settings(BaseSettings):
 
     # AI APIs
     OPENAI_API_KEY: str = ""
-    ANTHROPIC_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
     # External APIs

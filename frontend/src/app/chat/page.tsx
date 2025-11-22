@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Volume2, Mic, Sparkles, Home, RotateCcw, MessageSquare } from "lucide-react";
+import {
+  Send,
+  Volume2,
+  Mic,
+  Sparkles,
+  Home,
+  RotateCcw,
+  MessageSquare,
+} from "lucide-react";
 import Link from "next/link";
 import { chatApi, ChatMessage } from "@/services/api";
 
@@ -123,8 +131,12 @@ export default function ChatPage() {
                 <Sparkles className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">Voz da Lei</h1>
-                <p className="text-sm text-gray-600">Chat Inteligente sobre Legislação</p>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                  Voz da Lei
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Chat Inteligente sobre Legislação
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -162,7 +174,8 @@ export default function ChatPage() {
                 Como posso ajudar você hoje?
               </h2>
               <p className="text-lg text-gray-600 mb-10 max-w-2xl mx-auto">
-                Pergunte sobre qualquer lei, projeto ou dúvida sobre legislação brasileira
+                Pergunte sobre qualquer lei, projeto ou dúvida sobre legislação
+                brasileira
               </p>
               <div className="grid sm:grid-cols-2 gap-3 max-w-3xl mx-auto">
                 {suggestions.slice(0, 4).map((suggestion, idx) => (
@@ -175,7 +188,9 @@ export default function ChatPage() {
                       <div className="bg-blue-50 p-2 rounded-lg group-hover:bg-blue-100 transition-colors">
                         <MessageSquare className="w-4 h-4 text-blue-600" />
                       </div>
-                      <p className="text-sm text-gray-700 font-medium flex-1">{suggestion}</p>
+                      <p className="text-sm text-gray-700 font-medium flex-1">
+                        {suggestion}
+                      </p>
                     </div>
                   </button>
                 ))}
@@ -186,7 +201,9 @@ export default function ChatPage() {
           {messages.map((message, idx) => (
             <div
               key={idx}
-              className={`flex items-start gap-3 animate-fade-in ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex items-start gap-3 animate-fade-in ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              }`}
             >
               {message.role === "assistant" && (
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 rounded-xl flex-shrink-0 shadow-md">
@@ -218,9 +235,13 @@ export default function ChatPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className={`whitespace-pre-wrap leading-relaxed break-words overflow-wrap-anywhere ${
-                      message.role === "user" ? "text-white" : "text-gray-800"
-                    }`}>{message.content}</p>
+                    <p
+                      className={`whitespace-pre-wrap leading-relaxed break-words overflow-wrap-anywhere ${
+                        message.role === "user" ? "text-white" : "text-gray-800"
+                      }`}
+                    >
+                      {message.content}
+                    </p>
                   )}
                 </div>
               </div>
@@ -240,8 +261,14 @@ export default function ChatPage() {
               <div className="bg-white border border-gray-100 shadow-sm p-5 rounded-2xl">
                 <div className="flex space-x-2">
                   <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce" />
-                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
-                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                  <div
+                    className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.1s" }}
+                  />
+                  <div
+                    className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  />
                 </div>
               </div>
             </div>

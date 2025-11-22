@@ -4,7 +4,6 @@ from app.core.config import settings
 
 try:
     from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -27,30 +26,25 @@ class ChatService:
             return
 
         try:
-            # Prioridade: Groq (gratuito) > Anthropic > OpenAI
-            if settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip():
-                # Groq usa API compatível com OpenAI
+            # Prioridade: OpenAI > Groq
+            if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
                 self.llm = ChatOpenAI(
-                    model="llama-3.1-70b-versatile",  # Modelo gratuito do Groq
-                    temperature=0.7,
-                    api_key=settings.GROQ_API_KEY,
-                    base_url="https://api.groq.com/openai/v1"
-                )
-                logger.info("Modelo Groq (Llama 3.1 70B) inicializado")
-            elif settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY.strip():
-                self.llm = ChatAnthropic(
-                    model="claude-3-sonnet-20240229",
-                    temperature=0.7,
-                    api_key=settings.ANTHROPIC_API_KEY
-                )
-                logger.info("Modelo Anthropic Claude inicializado")
-            elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip():
-                self.llm = ChatOpenAI(
-                    model="gpt-4o-mini",  # Modelo mais barato da OpenAI
+                    model="gpt-4o-mini",  # Modelo mais barato e eficiente da OpenAI
                     temperature=0.7,
                     api_key=settings.OPENAI_API_KEY
                 )
                 logger.info("Modelo OpenAI GPT-4o-mini inicializado")
+            elif settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip():
+                # Groq usa API compatível com OpenAI
+                # Modelos disponíveis: llama-3.1-8b-instant, mixtral-8x7b-32768, gemma-7b-it
+                self.llm = ChatOpenAI(
+                    # Modelo gratuito do Groq (atualizado)
+                    model="llama-3.1-8b-instant",
+                    temperature=0.7,
+                    api_key=settings.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1"
+                )
+                logger.info("Modelo Groq (Llama 3.1 8B Instant) inicializado")
             else:
                 logger.warning(
                     "Nenhuma chave de API configurada. Chat desabilitado.")
@@ -75,7 +69,7 @@ class ChatService:
         """
         if not self.llm:
             return {
-                "message": "Desculpe, o serviço de chat não está disponível no momento. Por favor, configure uma chave de API (GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env do backend.",
+                "message": "Desculpe, o serviço de chat não está disponível no momento. Por favor, configure uma chave de API (OPENAI_API_KEY ou GROQ_API_KEY) no arquivo .env do backend.",
                 "sources": [],
                 "suggestions": []
             }
@@ -84,7 +78,7 @@ class ChatService:
             # Verificar se o LLM está disponível antes de processar
             if not self.llm:
                 return {
-                    "message": "O serviço de chat não está disponível. Por favor, configure uma chave de API (GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env do backend. Veja o arquivo .env.example para mais informações.",
+                    "message": "O serviço de chat não está disponível. Por favor, configure uma chave de API (OPENAI_API_KEY ou GROQ_API_KEY) no arquivo .env do backend. Veja o arquivo CONFIGURAR_API.md para mais informações.",
                     "sources": [],
                     "suggestions": []
                 }
@@ -134,14 +128,29 @@ class ChatService:
             logger.error(f"Erro ao processar chat: {error_msg}")
 
             # Tratar erros de autenticação especificamente
-            if "401" in error_msg or "authentication_error" in error_msg or "invalid" in error_msg.lower() and "api" in error_msg.lower():
+            if "401" in error_msg or "authentication_error" in error_msg or ("invalid" in error_msg.lower() and "api" in error_msg.lower()):
                 return {
-                    "message": "Erro de autenticação: As chaves de API não estão configuradas corretamente. Por favor, configure GROQ_API_KEY, OPENAI_API_KEY ou ANTHROPIC_API_KEY no arquivo .env do backend.",
+                    "message": "Erro de autenticação: As chaves de API não estão configuradas corretamente. Por favor, configure OPENAI_API_KEY ou GROQ_API_KEY no arquivo .env do backend.",
                     "sources": [],
                     "suggestions": []
                 }
 
-            # Tratar outros erros de forma genérica
+            # Tratar erro de modelo descontinuado
+            if "model_decommissioned" in error_msg or "decommissioned" in error_msg.lower():
+                return {
+                    "message": "O modelo de IA foi atualizado. Por favor, reinicie o servidor backend para usar o novo modelo.",
+                    "sources": [],
+                    "suggestions": []
+                }
+
+            # Tratar outros erros de forma genérica, mas com mais detalhes em modo DEBUG
+            if settings.DEBUG:
+                return {
+                    "message": f"Erro ao processar mensagem: {error_msg[:200]}",
+                    "sources": [],
+                    "suggestions": []
+                }
+
             return {
                 "message": "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde.",
                 "sources": [],

@@ -1,5 +1,6 @@
 import aiohttp
 import xml.etree.ElementTree as ET
+import re
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from datetime import datetime
@@ -646,30 +647,178 @@ class LexMLClient:
 
     async def _get_document_full_text(self, urn: Optional[str]) -> Optional[str]:
         """
-        Tentar obter o texto completo do documento através da URN
+        Obter o texto completo do documento através da URN
+
+        O LexML fornece documentos em XML. Este método busca o XML completo
+        e extrai o texto estruturado (artigos, parágrafos, incisos, etc).
 
         Args:
-            urn: URN do documento
+            urn: URN do documento (ex: 'urn:lex:br:senado.federal:projeto.lei;pls:2008;489')
 
         Returns:
-            Texto completo ou None
+            Texto completo formatado ou None
         """
         if not urn:
             return None
 
         try:
-            # O LexML pode fornecer o texto completo através de uma URL específica
-            # Baseado na URN, podemos construir a URL do documento
-            # Exemplo: https://www.lexml.gov.br/documento/urn:lex:br:senado.federal:projeto.lei;pls:2008;489
+            # Normalizar URN
+            if not urn.startswith("urn:lex:"):
+                urn = f"urn:lex:br:{urn}" if not urn.startswith(
+                    "urn:lex:br:") else urn
 
-            # Por enquanto, retornamos None pois precisaríamos testar a API real
-            # para ver como acessar o texto completo
-            # TODO: Implementar busca do texto completo quando descobrirmos o endpoint correto
+            # Tentar diferentes endpoints do LexML para obter o XML completo
+            # Opção 1: Endpoint de documento (se disponível)
+            urls_to_try = [
+                f"https://www.lexml.gov.br/documento/{quote(urn)}",
+                f"https://www.lexml.gov.br/documento/{urn}",
+                f"https://www.lexml.gov.br/busca/SRU?operation=searchRetrieve&query=urn%3D%22{quote(urn)}%22&recordSchema=lexml",
+            ]
+
+            async with aiohttp.ClientSession() as session:
+                for url in urls_to_try:
+                    try:
+                        async with session.get(
+                            url,
+                            headers={
+                                "Accept": "application/xml, text/xml, */*"},
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as response:
+                            if response.status == 200:
+                                content_type = response.headers.get(
+                                    "Content-Type", "")
+
+                                # Se for XML, processar
+                                if "xml" in content_type.lower():
+                                    xml_content = await response.text()
+                                    # Extrair texto do XML
+                                    text = self._extract_text_from_lexml_xml(
+                                        xml_content)
+                                    if text:
+                                        return text
+
+                                # Se for HTML, tentar extrair texto
+                                elif "html" in content_type.lower():
+                                    html_content = await response.text()
+                                    # Extrair texto do HTML (simplificado)
+                                    text = self._extract_text_from_html(
+                                        html_content)
+                                    if text:
+                                        return text
+
+                                # Se for texto plano
+                                else:
+                                    text = await response.text()
+                                    if text and len(text) > 100:  # Texto significativo
+                                        return text
+                    except Exception as e:
+                        logger.debug(f"Erro ao tentar URL {url}: {str(e)}")
+                        continue
+
+            logger.warning(
+                f"Não foi possível obter texto completo para URN {urn}")
             return None
 
         except Exception as e:
             logger.debug(
                 f"Não foi possível obter texto completo para URN {urn}: {str(e)}")
+            return None
+
+    def _extract_text_from_lexml_xml(self, xml_content: str) -> Optional[str]:
+        """
+        Extrair texto estruturado do XML LexML
+
+        O LexML usa uma estrutura XML específica com elementos como:
+        - Artigo, Paragrafo, Inciso, Alinea
+        - Texto, Rotulo, etc.
+
+        Args:
+            xml_content: Conteúdo XML do LexML
+
+        Returns:
+            Texto formatado ou None
+        """
+        try:
+            root = ET.fromstring(xml_content)
+
+            # Namespaces comuns do LexML
+            namespaces = {
+                'lexml': 'http://www.lexml.gov.br/1.0',
+                '': 'http://www.lexml.gov.br/1.0'  # Namespace padrão
+            }
+
+            text_parts = []
+
+            # Buscar artigos
+            for artigo in root.findall('.//Artigo', namespaces) + root.findall('.//artigo', namespaces):
+                rotulo = artigo.find('.//Rotulo', namespaces)
+                if rotulo is not None:
+                    text_parts.append(f"\n{rotulo.text}")
+
+                # Buscar parágrafos
+                for paragrafo in artigo.findall('.//Paragrafo', namespaces) + artigo.findall('.//paragrafo', namespaces):
+                    par_rotulo = paragrafo.find('.//Rotulo', namespaces)
+                    if par_rotulo is not None:
+                        text_parts.append(f"\n{par_rotulo.text}")
+
+                    # Buscar texto
+                    texto = paragrafo.find('.//Texto', namespaces)
+                    if texto is not None and texto.text:
+                        text_parts.append(texto.text)
+
+                # Buscar incisos
+                for inciso in artigo.findall('.//Inciso', namespaces) + artigo.findall('.//inciso', namespaces):
+                    inc_rotulo = inciso.find('.//Rotulo', namespaces)
+                    if inc_rotulo is not None:
+                        text_parts.append(f"\n{inc_rotulo.text}")
+
+                    texto = inciso.find('.//Texto', namespaces)
+                    if texto is not None and texto.text:
+                        text_parts.append(texto.text)
+
+            # Se não encontrou estrutura específica, extrair todo o texto
+            if not text_parts:
+                # Buscar todos os elementos de texto
+                for elem in root.iter():
+                    if elem.text and elem.text.strip():
+                        text_parts.append(elem.text.strip())
+
+            return "\n".join(text_parts) if text_parts else None
+
+        except ET.ParseError as e:
+            logger.debug(f"Erro ao parsear XML LexML: {str(e)}")
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao extrair texto do XML: {str(e)}")
+            return None
+
+    def _extract_text_from_html(self, html_content: str) -> Optional[str]:
+        """
+        Extrair texto de HTML (simplificado)
+
+        Args:
+            html_content: Conteúdo HTML
+
+        Returns:
+            Texto extraído ou None
+        """
+        try:
+            # Remover tags HTML básicas e extrair texto
+            # Remover scripts e styles
+            html_content = re.sub(
+                r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+            html_content = re.sub(
+                r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+            # Remover tags HTML
+            text = re.sub(r'<[^>]+>', '\n', html_content)
+            # Limpar espaços em branco
+            text = re.sub(r'\n\s*\n', '\n\n', text)
+            text = text.strip()
+
+            return text if len(text) > 100 else None
+
+        except Exception as e:
+            logger.debug(f"Erro ao extrair texto do HTML: {str(e)}")
             return None
 
 
