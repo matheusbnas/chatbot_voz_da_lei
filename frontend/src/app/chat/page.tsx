@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Volume2, Mic } from 'lucide-react';
+import { Send, Volume2, Mic, Sparkles, Home, RotateCcw, MessageSquare } from 'lucide-react';
+import Link from 'next/link';
 import { chatApi, ChatMessage } from '@/services/api';
 
 export default function ChatPage() {
@@ -9,6 +10,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -76,35 +78,80 @@ export default function ChatPage() {
     }
   };
 
+  const clearChat = () => {
+    setMessages([]);
+    chatApi.getSuggestions().then(setSuggestions).catch(console.error);
+  };
+
+  const toggleRecording = () => {
+    setIsRecording(!isRecording);
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50">
       {/* Header */}
-      <header className="bg-white shadow-sm p-4">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-primary-600">Voz da Lei - Chat</h1>
-          <p className="text-gray-600">Pergunte sobre qualquer lei ou projeto</p>
+      <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200">
+        <div className="max-w-5xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-2 rounded-xl shadow-lg">
+                <Sparkles className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">Voz da Lei</h1>
+                <p className="text-sm text-gray-600">Chat Inteligente sobre Legislação</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {messages.length > 0 && (
+                <button
+                  onClick={clearChat}
+                  className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700"
+                  title="Limpar conversa"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span className="hidden sm:inline">Nova Conversa</span>
+                </button>
+              )}
+              <Link
+                href="/"
+                className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                title="Voltar ao início"
+              >
+                <Home className="w-5 h-5 text-gray-700" />
+              </Link>
+            </div>
+          </div>
         </div>
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="max-w-4xl mx-auto space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="max-w-4xl mx-auto space-y-6">
           {messages.length === 0 && (
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-semibold text-gray-700 mb-4">
-                Como posso ajudar?
+            <div className="text-center py-8 sm:py-16 animate-fade-in">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
+                <Sparkles className="w-10 h-10 text-white" />
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+                Como posso ajudar você hoje?
               </h2>
-              <p className="text-gray-500 mb-8">
-                Faça uma pergunta sobre legislação brasileira
+              <p className="text-lg text-gray-600 mb-10 max-w-2xl mx-auto">
+                Pergunte sobre qualquer lei, projeto ou dúvida sobre legislação brasileira
               </p>
-              <div className="grid gap-3">
+              <div className="grid sm:grid-cols-2 gap-3 max-w-3xl mx-auto">
                 {suggestions.slice(0, 4).map((suggestion, idx) => (
                   <button
                     key={idx}
                     onClick={() => sendMessage(suggestion)}
-                    className="p-3 bg-white rounded-lg shadow hover:shadow-md transition text-left"
+                    className="group p-4 bg-white rounded-xl shadow-sm hover:shadow-lg transition-all text-left border border-gray-100 hover:border-blue-200 hover:-translate-y-0.5"
                   >
-                    {suggestion}
+                    <div className="flex items-start gap-3">
+                      <div className="bg-blue-50 p-2 rounded-lg group-hover:bg-blue-100 transition-colors">
+                        <MessageSquare className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <p className="text-sm text-gray-700 font-medium flex-1">{suggestion}</p>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -114,27 +161,42 @@ export default function ChatPage() {
           {messages.map((message, idx) => (
             <div
               key={idx}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex items-start gap-3 animate-fade-in ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
+              {message.role === 'assistant' && (
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 rounded-xl flex-shrink-0 shadow-md">
+                  <Sparkles className="w-5 h-5 text-white" />
+                </div>
+              )}
               <div
-                className={`max-w-2xl p-4 rounded-lg ${
+                className={`max-w-2xl p-4 rounded-2xl shadow-sm ${
                   message.role === 'user'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white shadow'
+                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-blue-200'
+                    : 'bg-white border border-gray-100'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <p className={`whitespace-pre-wrap leading-relaxed ${
+                  message.role === 'user' ? 'text-white' : 'text-gray-800'
+                }`}>{message.content}</p>
               </div>
+              {message.role === 'user' && (
+                <div className="bg-gray-200 p-2.5 rounded-xl flex-shrink-0">
+                  <MessageSquare className="w-5 h-5 text-gray-700" />
+                </div>
+              )}
             </div>
           ))}
 
           {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-white shadow p-4 rounded-lg">
+            <div className="flex items-start gap-3 animate-fade-in">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 rounded-xl flex-shrink-0 shadow-md">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div className="bg-white border border-gray-100 shadow-sm p-5 rounded-2xl">
                 <div className="flex space-x-2">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                  <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce" />
+                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                 </div>
               </div>
             </div>
@@ -146,15 +208,18 @@ export default function ChatPage() {
 
       {/* Suggestions */}
       {messages.length > 0 && suggestions.length > 0 && (
-        <div className="border-t border-gray-200 p-4 bg-white">
+        <div className="border-t border-gray-200 p-4 bg-white/80 backdrop-blur-sm">
           <div className="max-w-4xl mx-auto">
-            <p className="text-sm text-gray-600 mb-2">Sugestões:</p>
+            <p className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-500" />
+              Perguntas sugeridas:
+            </p>
             <div className="flex flex-wrap gap-2">
-              {suggestions.map((suggestion, idx) => (
+              {suggestions.slice(0, 6).map((suggestion, idx) => (
                 <button
                   key={idx}
                   onClick={() => sendMessage(suggestion)}
-                  className="px-3 py-1 bg-gray-100 rounded-full text-sm hover:bg-gray-200 transition"
+                  className="px-4 py-2 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-100 rounded-full text-sm font-medium text-gray-700 hover:from-blue-100 hover:to-sky-100 hover:border-blue-200 transition-all hover:shadow-sm"
                 >
                   {suggestion}
                 </button>
@@ -165,27 +230,48 @@ export default function ChatPage() {
       )}
 
       {/* Input */}
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <div className="max-w-4xl mx-auto flex gap-2">
-          <button className="p-3 rounded-lg bg-gray-100 hover:bg-gray-200 transition">
-            <Mic className="w-5 h-5" />
-          </button>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Digite sua pergunta..."
-            className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            disabled={isLoading}
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={isLoading || !input.trim()}
-            className="p-3 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+      <div className="border-t border-gray-200 p-4 bg-white/80 backdrop-blur-sm">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex gap-2 items-end">
+            <button
+              onClick={toggleRecording}
+              className={`p-3 rounded-xl transition-all flex-shrink-0 ${
+                isRecording
+                  ? 'bg-red-100 hover:bg-red-200 text-red-600'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+              title="Gravar áudio"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Digite sua pergunta sobre legislação..."
+                className="w-full p-4 pr-12 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm bg-white"
+                disabled={isLoading}
+              />
+              {input.trim() && (
+                <div className="absolute right-3 bottom-3 text-xs text-gray-400">
+                  {input.length} caracteres
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => sendMessage()}
+              disabled={isLoading || !input.trim()}
+              className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex-shrink-0 disabled:shadow-none"
+              title="Enviar mensagem"
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-3 text-center">
+            Pressione Enter para enviar ou Shift + Enter para nova linha
+          </p>
         </div>
       </div>
     </div>
