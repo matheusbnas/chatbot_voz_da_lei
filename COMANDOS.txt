@@ -1,0 +1,434 @@
+# Comandos Úteis - Voz da Lei
+
+## 🐳 Docker Commands
+
+### Iniciar todos os serviços
+```bash
+docker-compose up -d
+```
+
+### Ver logs em tempo real
+```bash
+docker-compose logs -f
+
+# Logs de um serviço específico
+docker-compose logs -f backend
+docker-compose logs -f frontend
+```
+
+### Parar todos os serviços
+```bash
+docker-compose down
+```
+
+### Reiniciar um serviço
+```bash
+docker-compose restart backend
+docker-compose restart frontend
+```
+
+### Reconstruir imagens
+```bash
+docker-compose build
+docker-compose up -d --build
+```
+
+### Limpar tudo (cuidado!)
+```bash
+docker-compose down -v  # Remove volumes também
+```
+
+### Entrar em um container
+```bash
+docker-compose exec backend bash
+docker-compose exec frontend sh
+```
+
+## 🐍 Backend (Python)
+
+### Criar ambiente virtual
+```bash
+cd backend
+python -m venv .venv
+```
+
+### Ativar ambiente
+```bash
+# Linux/Mac
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+```
+
+### Instalar dependências
+```bash
+pip install -r requirements.txt
+```
+
+### Rodar servidor de desenvolvimento
+```bash
+uvicorn app.main:app --reload
+
+# Ou na porta 8001
+uvicorn app.main:app --reload --port 8001
+```
+
+### Rodar testes
+```bash
+pytest
+pytest -v  # Verbose
+pytest tests/test_chat.py  # Teste específico
+```
+
+### Criar migração do banco
+```bash
+alembic revision --autogenerate -m "descrição"
+alembic upgrade head
+```
+
+### Acessar Python shell com contexto
+```bash
+python
+>>> from app.core.config import settings
+>>> print(settings.DATABASE_URL)
+```
+
+### Instalar nova dependência
+```bash
+pip install nome-pacote
+pip freeze > requirements.txt  # Atualizar arquivo
+```
+
+## ⚛️ Frontend (Next.js)
+
+### Instalar dependências
+```bash
+cd frontend
+npm install
+```
+
+### Rodar desenvolvimento
+```bash
+npm run dev
+
+# Ou na porta 3001
+npm run dev -- -p 3001
+```
+
+### Build para produção
+```bash
+npm run build
+npm start  # Rodar build
+```
+
+### Adicionar pacote
+```bash
+npm install nome-pacote
+npm install -D nome-pacote  # Dev dependency
+```
+
+### Limpar cache
+```bash
+rm -rf .next
+npm run dev
+```
+
+### Verificar erros TypeScript
+```bash
+npm run type-check  # Se configurado
+npx tsc --noEmit
+```
+
+### Lint do código
+```bash
+npm run lint
+```
+
+## 🗄️ PostgreSQL
+
+### Conectar via Docker
+```bash
+docker-compose exec postgres psql -U vozdalei -d vozdalei
+```
+
+### Conectar localmente
+```bash
+psql -h localhost -U vozdalei -d vozdalei
+```
+
+### Comandos úteis no psql
+```sql
+\l              -- Listar databases
+\dt             -- Listar tabelas
+\d users        -- Descrever tabela users
+\q              -- Sair
+
+-- Queries úteis
+SELECT * FROM users LIMIT 10;
+SELECT COUNT(*) FROM legislations;
+SELECT * FROM queries ORDER BY created_at DESC LIMIT 5;
+```
+
+### Backup
+```bash
+docker-compose exec postgres pg_dump -U vozdalei vozdalei > backup.sql
+```
+
+### Restore
+```bash
+docker-compose exec -T postgres psql -U vozdalei vozdalei < backup.sql
+```
+
+## 🔴 Redis
+
+### Conectar via Docker
+```bash
+docker-compose exec redis redis-cli
+```
+
+### Comandos úteis
+```bash
+KEYS *              # Listar todas as chaves
+GET chave           # Obter valor
+SET chave valor     # Definir valor
+DEL chave           # Deletar chave
+FLUSHALL            # Limpar tudo (cuidado!)
+INFO                # Informações do servidor
+```
+
+## 🔧 Troubleshooting
+
+### Porta já em uso
+```bash
+# Encontrar processo na porta 8000
+lsof -i :8000
+kill -9 <PID>
+
+# Ou usar outra porta
+uvicorn app.main:app --reload --port 8001
+```
+
+### Limpar cache do pip
+```bash
+pip cache purge
+```
+
+### Limpar node_modules
+```bash
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Reiniciar PostgreSQL
+```bash
+docker-compose restart postgres
+```
+
+### Ver uso de recursos dos containers
+```bash
+docker stats
+```
+
+## 📊 Monitoramento
+
+### Ver logs do backend
+```bash
+tail -f backend/logs/app.log
+```
+
+### Testar endpoint
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Chat
+curl -X POST http://localhost:8000/api/v1/chat/ \
+  -H "Content-Type: application/json" \
+  -d '{"message": "teste"}'
+
+# Trending
+curl http://localhost:8000/api/v1/legislation/trending
+```
+
+### Verificar variáveis de ambiente
+```bash
+# Backend
+cat backend/.env
+
+# Frontend
+cat frontend/.env.local
+```
+
+## 🚀 Deploy
+
+### Build para produção (Frontend)
+```bash
+cd frontend
+npm run build
+```
+
+### Deploy Vercel (Frontend)
+```bash
+npm install -g vercel
+vercel
+```
+
+### Deploy Railway (Backend)
+```bash
+# Conectar repositório Git ao Railway
+# Ou usar CLI
+npm install -g railway
+railway login
+railway init
+railway up
+```
+
+## 🧪 Testes
+
+### Testar API com curl
+```bash
+# Chat
+curl -X POST http://localhost:8000/api/v1/chat/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "O que é um projeto de lei?",
+    "conversation_history": [],
+    "use_audio": false
+  }'
+
+# Simplificação
+curl -X POST http://localhost:8000/api/v1/simplification/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Seu texto jurídico aqui",
+    "target_level": "simple",
+    "include_audio": false
+  }'
+
+# Busca
+curl -X POST http://localhost:8000/api/v1/search/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "educação",
+    "page": 1,
+    "page_size": 10
+  }'
+```
+
+### Testar com HTTPie (mais legível)
+```bash
+# Instalar: pip install httpie
+
+http POST localhost:8000/api/v1/chat/ \
+  message="O que é uma PEC?"
+
+http GET localhost:8000/api/v1/legislation/trending limit==5
+```
+
+## 🔐 Segurança
+
+### Gerar chave secreta
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### Ver chaves de API (sem revelar)
+```bash
+echo $OPENAI_API_KEY | cut -c1-10
+```
+
+## 📦 Manutenção
+
+### Atualizar dependências Python
+```bash
+cd backend
+pip list --outdated
+pip install --upgrade nome-pacote
+pip freeze > requirements.txt
+```
+
+### Atualizar dependências Node
+```bash
+cd frontend
+npm outdated
+npm update
+npm install nome-pacote@latest
+```
+
+### Limpar arquivos de áudio antigos
+```bash
+find backend/temp/audio -type f -mtime +7 -delete
+```
+
+## 🎯 Atalhos Úteis
+
+### Start rápido com Docker
+```bash
+alias voz-up='docker-compose up -d'
+alias voz-down='docker-compose down'
+alias voz-logs='docker-compose logs -f'
+```
+
+### Adicione ao ~/.bashrc ou ~/.zshrc
+```bash
+export VOZ_DA_LEI_PATH="~/voz-da-lei"
+alias voz='cd $VOZ_DA_LEI_PATH'
+```
+
+## 📝 Logs Importantes
+
+### Localização dos logs
+```
+backend/logs/app.log              # Logs da aplicação
+backend/logs/celery.log           # Logs do Celery (se usado)
+frontend/.next/                   # Build logs
+docker-compose logs               # Logs dos containers
+```
+
+### Limpar logs
+```bash
+> backend/logs/app.log
+docker-compose logs --tail=0 -f   # Apenas novos logs
+```
+
+## 🔄 Reset Completo
+
+Se algo der muito errado:
+
+```bash
+# Parar tudo
+docker-compose down -v
+
+# Limpar imagens
+docker-compose rm -f
+
+# Remover volumes
+docker volume prune
+
+# Reconstruir
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+## 📚 Documentação Online
+
+Sempre disponível em:
+- Backend API: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## 💡 Dicas
+
+1. **Sempre ative o ambiente virtual** antes de rodar comandos Python
+2. **Use Docker Compose** para desenvolvimento - é mais fácil
+3. **Verifique os logs** quando algo não funcionar
+4. **Mantenha .env atualizado** mas nunca commite ele
+5. **Teste em produção** antes de fazer deploy real
+
+---
+
+**Para mais informações, veja:**
+- README.md - Visão geral do projeto
+- DOCS.md - Documentação técnica completa
+- QUICKSTART.md - Guia de início rápido

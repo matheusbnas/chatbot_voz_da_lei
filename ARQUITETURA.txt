@@ -1,0 +1,358 @@
+# Arquitetura do Sistema Voz da Lei
+
+## Visão Geral da Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          CAMADA DE APRESENTAÇÃO                       │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     Frontend (Next.js)                       │   │
+│  │                                                              │   │
+│  │  • Chat Interface                                           │   │
+│  │  • Busca e Exploração                                       │   │
+│  │  • Visualização de Legislações                              │   │
+│  │  • Gravação/Reprodução de Áudio                             │   │
+│  │  • Design Responsivo (Mobile/Desktop)                       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              ↓ HTTP/REST                             │
+└───────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CAMADA DE APLICAÇÃO                           │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Backend API (FastAPI)                     │   │
+│  │                                                              │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │   │
+│  │  │     Chat     │  │    Search    │  │ Legislation  │     │   │
+│  │  │   Service    │  │   Service    │  │   Service    │     │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘     │   │
+│  │                                                              │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │   │
+│  │  │Simplification│  │    Audio     │  │   Integration│     │   │
+│  │  │   Service    │  │   Service    │  │   Manager    │     │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+                                 ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│                          CAMADA DE DADOS                              │
+│                                                                       │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐          │
+│  │ PostgreSQL  │     │    Redis    │     │   Storage   │          │
+│  │  (Dados)    │     │   (Cache)   │     │   (Áudio)   │          │
+│  └─────────────┘     └─────────────┘     └─────────────┘          │
+└───────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SERVIÇOS EXTERNOS                                │
+│                                                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │   OpenAI     │  │  Anthropic   │  │   Whisper    │             │
+│  │     API      │  │     API      │  │     API      │             │
+│  └──────────────┘  └──────────────┘  └──────────────┘             │
+│                                                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │   Câmara     │  │    Senado    │  │   Querido    │             │
+│  │ dos Deputados│  │   Federal    │  │   Diário     │             │
+│  └──────────────┘  └──────────────┘  └──────────────┘             │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## Fluxo de Dados - Chat
+
+```
+1. Usuário digita pergunta
+        ↓
+2. Frontend → POST /api/v1/chat/
+        ↓
+3. Backend recebe requisição
+        ↓
+4. Chat Service processa:
+   - Valida entrada
+   - Busca contexto em legislações (se necessário)
+   - Consulta histórico de conversa
+        ↓
+5. Envia para IA (OpenAI/Anthropic)
+        ↓
+6. IA gera resposta contextualizada
+        ↓
+7. Backend:
+   - Salva no banco de dados
+   - Gera sugestões de próximas perguntas
+   - (Opcional) Gera áudio com TTS
+        ↓
+8. Retorna resposta para Frontend
+        ↓
+9. Interface exibe resposta + sugestões
+```
+
+## Fluxo de Dados - Simplificação
+
+```
+1. Usuário cola texto jurídico
+        ↓
+2. Frontend → POST /api/v1/simplification/
+        ↓
+3. Backend:
+   - Valida texto
+   - Verifica cache (Redis)
+        ↓
+4. Se não em cache:
+   - Simplification Service processa
+   - Envia para IA com prompt específico
+   - Recebe texto simplificado
+        ↓
+5. (Opcional) Gera áudio com TTS
+        ↓
+6. Salva resultado em cache
+        ↓
+7. Retorna texto simplificado + áudio
+        ↓
+8. Interface exibe lado a lado:
+   - Original | Simplificado
+   - Botão para reproduzir áudio
+```
+
+## Fluxo de Dados - Busca
+
+```
+1. Usuário digita termo de busca
+        ↓
+2. Frontend → POST /api/v1/search/
+        ↓
+3. Backend Search Service:
+   - Valida query
+   - Busca em cache primeiro
+        ↓
+4. Se não em cache:
+   - Consulta APIs externas em paralelo:
+     * Câmara dos Deputados
+     * Senado Federal
+     * Querido Diário (se municipal)
+        ↓
+5. Agrega e normaliza resultados
+        ↓
+6. Aplica filtros e ordenação
+        ↓
+7. Salva em cache por 1 hora
+        ↓
+8. Retorna resultados paginados
+        ↓
+9. Interface exibe cards de legislação
+```
+
+## Modelo de Dados
+
+### Principais Entidades
+
+```
+┌─────────────────┐
+│      User       │
+├─────────────────┤
+│ id              │
+│ email           │
+│ username        │
+│ password_hash   │
+│ created_at      │
+└─────────────────┘
+        │
+        │ 1:N
+        ↓
+┌─────────────────┐
+│     Query       │
+├─────────────────┤
+│ id              │
+│ user_id         │
+│ query_text      │
+│ response        │
+│ audio_url       │
+│ created_at      │
+└─────────────────┘
+
+┌─────────────────┐
+│  Legislation    │
+├─────────────────┤
+│ id              │
+│ external_id     │
+│ type            │
+│ number          │
+│ year            │
+│ title           │
+│ summary         │
+│ full_text       │
+│ simplified_text │
+│ status          │
+│ author          │
+│ created_at      │
+└─────────────────┘
+        │
+        │ N:M
+        ↓
+┌─────────────────┐
+│    Favorite     │
+├─────────────────┤
+│ id              │
+│ user_id         │
+│ legislation_id  │
+│ notes           │
+│ created_at      │
+└─────────────────┘
+```
+
+## Segurança
+
+```
+┌─────────────────────────────────────────┐
+│          Camadas de Segurança           │
+├─────────────────────────────────────────┤
+│                                         │
+│  1. HTTPS/TLS (Produção)               │
+│     • Certificado SSL                  │
+│     • Criptografia em trânsito         │
+│                                         │
+│  2. CORS                               │
+│     • Origens permitidas configuráveis │
+│     • Headers de segurança             │
+│                                         │
+│  3. Autenticação JWT                   │
+│     • Tokens seguros                   │
+│     • Expiração configurável           │
+│                                         │
+│  4. Validação de Entrada               │
+│     • Pydantic Schemas                 │
+│     • Sanitização de dados             │
+│                                         │
+│  5. Rate Limiting                      │
+│     • Proteção contra abuso            │
+│     • Limites por IP/usuário           │
+│                                         │
+│  6. Senhas                             │
+│     • Hash com bcrypt                  │
+│     • Sal único por usuário            │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+## Escalabilidade
+
+```
+┌────────────────────────────────────────┐
+│      Estratégias de Escalabilidade     │
+├────────────────────────────────────────┤
+│                                        │
+│  Horizontal (Scale Out):               │
+│  • Múltiplas instâncias do backend    │
+│  • Load balancer (Nginx/AWS ELB)      │
+│  • Stateless API (JWT)                │
+│                                        │
+│  Cache:                                │
+│  • Redis para respostas frequentes    │
+│  • Cache de consultas a APIs externas │
+│  • TTL configurável                   │
+│                                        │
+│  Banco de Dados:                       │
+│  • Read replicas para consultas       │
+│  • Connection pooling                 │
+│  • Índices otimizados                 │
+│                                        │
+│  Assíncrono:                           │
+│  • FastAPI com async/await            │
+│  • Celery para tarefas pesadas        │
+│  • Background jobs                     │
+│                                        │
+│  CDN:                                  │
+│  • Assets estáticos                   │
+│  • Arquivos de áudio                  │
+│  • Distribuição global                │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+## Monitoramento
+
+```
+┌────────────────────────────────────────┐
+│         Stack de Monitoramento         │
+├────────────────────────────────────────┤
+│                                        │
+│  Logs:                                 │
+│  • Loguru (estruturado)               │
+│  • Níveis: DEBUG, INFO, ERROR         │
+│  • Rotação automática                 │
+│                                        │
+│  Métricas:                             │
+│  • Tempo de resposta                  │
+│  • Taxa de erro                       │
+│  • Uso de recursos                    │
+│  • Chamadas a APIs externas           │
+│                                        │
+│  Health Checks:                        │
+│  • /health endpoint                   │
+│  • Status de dependências             │
+│  • Monitoramento contínuo             │
+│                                        │
+│  Alertas:                              │
+│  • Erros críticos                     │
+│  • Performance degradada              │
+│  • Limites excedidos                  │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+## Deploy em Produção
+
+```
+┌────────────────────────────────────────────┐
+│           Arquitetura de Produção          │
+├────────────────────────────────────────────┤
+│                                            │
+│  Frontend (Vercel):                        │
+│  • Deploy automático do GitHub            │
+│  • CDN global                             │
+│  • SSL automático                         │
+│  • Preview deployments                    │
+│                                            │
+│  Backend (Railway/Render):                 │
+│  • Container Docker                       │
+│  • Auto-scaling                           │
+│  • Health checks                          │
+│  • Rollback automático                    │
+│                                            │
+│  Banco de Dados (Supabase/AWS RDS):       │
+│  • PostgreSQL gerenciado                  │
+│  • Backups automáticos                    │
+│  • Read replicas                          │
+│  • Alta disponibilidade                   │
+│                                            │
+│  Cache (Redis Cloud):                      │
+│  • Redis gerenciado                       │
+│  • Persistência opcional                  │
+│  • Clustering                             │
+│                                            │
+│  Storage (AWS S3/Cloudflare R2):          │
+│  • Arquivos de áudio                      │
+│  • CDN integrado                          │
+│  • Lifecycle policies                     │
+│                                            │
+└────────────────────────────────────────────┘
+```
+
+## Custos Estimados (Produção)
+
+```
+Mensal (USD):
+├── Frontend (Vercel Free)         : $0
+├── Backend (Railway/Render)       : $20-50
+├── PostgreSQL (Supabase Free)     : $0
+├── Redis (Redis Cloud Free)       : $0
+├── Storage S3                     : $5-20
+├── OpenAI API                     : $50-200
+├── Anthropic API                  : $50-200
+└── Total Estimado                 : $125-470/mês
+
+Obs: Custos variam conforme uso. 
+Comece com tiers gratuitos e escale conforme necessário.
+```

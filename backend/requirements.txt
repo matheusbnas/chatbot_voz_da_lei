@@ -1,0 +1,76 @@
+# Requirements Completo - Sistema RAG + API
+# Combina todas as dependências necessárias para ambos os servidores
+
+# Core FastAPI e servidor
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+
+# LangChain e componentes RAG
+langchain
+langchain-openai
+langchain-anthropic
+langchain-core
+langchain-text-splitters
+langchain-chroma
+langchain-community
+
+# LangGraph
+langgraph
+
+
+# OpenAI e embeddings
+openai
+tiktoken
+sentence-transformers
+
+# Processamento de documentos
+PyPDF2
+python-docx
+openpyxl
+docx2txt
+unstructured
+python-magic
+
+# ChromaDB para vector store
+chromadb
+
+# Processamento de planilhas
+pandas
+
+# Google Drive API
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+
+# LangChain para chat agents
+langchain-google-genai
+google-generativeai
+
+# Autenticação e segurança
+python-jose
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# Utilitários
+pydantic[email]
+requests
+aiohttp
+pytz
+magic-wormhole
+
+# Performance e cache (opcional)
+redis
+aioredis
+
+# Supabase (se usar)
+supabase
+
+# Dependências adicionais
+langsmith
+sqlalchemy
+
+# Dependências específicas do LangChain (versões compatíveis)
+langchain-community
+langchain-core

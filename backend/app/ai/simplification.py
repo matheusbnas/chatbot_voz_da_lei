@@ -1,0 +1,171 @@
+from typing import List, Dict, Any, Optional
+from loguru import logger
+from app.core.config import settings
+
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    logger.warning(
+        "LangChain não está disponível. Funcionalidades de chat desabilitadas.")
+
+
+class ChatService:
+    """Serviço para processamento de chat com IA"""
+
+    def __init__(self):
+        self.llm = None
+        self._initialize_llm()
+
+    def _initialize_llm(self):
+        """Inicializar modelo de linguagem"""
+        if not LANGCHAIN_AVAILABLE:
+            logger.warning("LangChain não disponível. Chat desabilitado.")
+            return
+
+        try:
+            # Tentar usar Anthropic primeiro, depois OpenAI
+            if settings.ANTHROPIC_API_KEY:
+                self.llm = ChatAnthropic(
+                    model="claude-3-sonnet-20240229",
+                    temperature=0.7,
+                    api_key=settings.ANTHROPIC_API_KEY
+                )
+                logger.info("Modelo Anthropic Claude inicializado")
+            elif settings.OPENAI_API_KEY:
+                self.llm = ChatOpenAI(
+                    model="gpt-4",
+                    temperature=0.7,
+                    api_key=settings.OPENAI_API_KEY
+                )
+                logger.info("Modelo OpenAI GPT-4 inicializado")
+            else:
+                logger.warning(
+                    "Nenhuma chave de API configurada. Chat desabilitado.")
+        except Exception as e:
+            logger.error(f"Erro ao inicializar modelo de linguagem: {str(e)}")
+
+    async def chat(
+        self,
+        message: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Processar mensagem do usuário e retornar resposta
+
+        Args:
+            message: Mensagem do usuário
+            conversation_history: Histórico de conversa anterior
+
+        Returns:
+            Dict com 'message', 'sources' e 'suggestions'
+        """
+        if not self.llm:
+            return {
+                "message": "Desculpe, o serviço de chat não está disponível no momento. Por favor, configure as chaves de API (OPENAI_API_KEY ou ANTHROPIC_API_KEY) no arquivo .env",
+                "sources": [],
+                "suggestions": []
+            }
+
+        try:
+            # Preparar mensagens para o modelo
+            messages = []
+
+            # Adicionar mensagem do sistema
+            system_prompt = """Você é um assistente especializado em legislação brasileira. 
+            Sua função é ajudar cidadãos a entenderem leis, projetos de lei, emendas constitucionais 
+            e outros documentos legislativos de forma clara e acessível.
+            
+            Sempre responda de forma educada, clara e objetiva. Se não souber algo, seja honesto.
+            Quando possível, forneça exemplos práticos para facilitar o entendimento."""
+
+            messages.append(SystemMessage(content=system_prompt))
+
+            # Adicionar histórico de conversa
+            if conversation_history:
+                for msg in conversation_history:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        messages.append(HumanMessage(content=content))
+                    elif role == "assistant":
+                        messages.append(AIMessage(content=content))
+
+            # Adicionar mensagem atual
+            messages.append(HumanMessage(content=message))
+
+            # Obter resposta do modelo
+            response = await self.llm.ainvoke(messages)
+            response_text = response.content if hasattr(
+                response, 'content') else str(response)
+
+            # Gerar sugestões baseadas na mensagem
+            suggestions = self._generate_suggestions(message)
+
+            return {
+                "message": response_text,
+                "sources": [],  # TODO: Implementar busca de legislação relacionada
+                "suggestions": suggestions
+            }
+
+        except Exception as e:
+            logger.error(f"Erro ao processar chat: {str(e)}")
+            return {
+                "message": f"Desculpe, ocorreu um erro ao processar sua mensagem: {str(e)}",
+                "sources": [],
+                "suggestions": []
+            }
+
+    def _generate_suggestions(self, message: str) -> List[str]:
+        """Gerar sugestões de perguntas relacionadas"""
+        # Sugestões padrão
+        default_suggestions = [
+            "O que é um projeto de lei?",
+            "Como funciona a tramitação de uma PEC?",
+            "Quais são os projetos em votação hoje?",
+            "Como posso acompanhar um projeto específico?"
+        ]
+
+        # TODO: Implementar geração inteligente de sugestões baseada na mensagem
+        return default_suggestions
+
+    async def simplify_text(
+        self,
+        text: str,
+        target_level: str = "simple"
+    ) -> str:
+        """
+        Simplificar texto legislativo
+
+        Args:
+            text: Texto a ser simplificado
+            target_level: Nível de simplificação (simple, moderate, technical)
+
+        Returns:
+            Texto simplificado
+        """
+        if not self.llm:
+            return "Serviço de simplificação não disponível."
+
+        try:
+            prompt = f"""Simplifique o seguinte texto legislativo para um nível {target_level}.
+            Mantenha o significado original, mas use linguagem mais acessível.
+            
+            Texto original:
+            {text}
+            
+            Texto simplificado:"""
+
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            return response.content if hasattr(response, 'content') else str(response)
+
+        except Exception as e:
+            logger.error(f"Erro ao simplificar texto: {str(e)}")
+            return f"Erro ao simplificar texto: {str(e)}"
+
+
+# Instância global do serviço
+chat_service = ChatService()
