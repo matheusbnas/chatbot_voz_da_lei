@@ -27,8 +27,6 @@ share/python-wheels/
 MANIFEST
 .next/
 .next/**
-frontend/.next/
-frontend/.next/**
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
