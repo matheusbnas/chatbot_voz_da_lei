@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from app.core.config import settings
+from app.services.legislation_search import unified_search
 
 try:
     from langchain_openai import ChatOpenAI
@@ -125,6 +126,25 @@ class ChatService:
                     elif role == "assistant":
                         messages.append(AIMessage(content=content))
 
+            # Buscar legislação relevante antes de responder
+            legislation_context = ""
+            try:
+                # Extrair palavras-chave da mensagem para busca
+                # Buscar legislação relacionada
+                context = await unified_search.get_relevant_context(
+                    query=message,
+                    max_results=3
+                )
+                if context:
+                    legislation_context = f"\n\nLEGISLAÇÃO RELACIONADA ENCONTRADA:\n{context}\n\nUse essas informações para dar uma resposta mais precisa e citar as fontes quando relevante."
+            except Exception as e:
+                logger.debug(f"Erro ao buscar legislação: {str(e)}")
+                # Continuar sem contexto se houver erro
+
+            # Adicionar contexto de legislação se disponível
+            if legislation_context:
+                messages.append(SystemMessage(content=legislation_context))
+
             # Adicionar mensagem atual
             messages.append(HumanMessage(content=message))
 
@@ -133,12 +153,28 @@ class ChatService:
             response_text = response.content if hasattr(
                 response, 'content') else str(response)
 
+            # Buscar fontes para incluir na resposta
+            sources = []
+            try:
+                search_results = await unified_search.search(message, limit=3)
+                sources = [
+                    {
+                        "title": r.get("title", ""),
+                        "source": r.get("source", ""),
+                        "url": r.get("url", ""),
+                        "date": r.get("date", "")
+                    }
+                    for r in search_results
+                ]
+            except Exception as e:
+                logger.debug(f"Erro ao buscar fontes: {str(e)}")
+
             # Gerar sugestões baseadas na mensagem
             suggestions = self._generate_suggestions(message)
 
             return {
                 "message": response_text,
-                "sources": [],  # TODO: Implementar busca de legislação relacionada
+                "sources": sources,
                 "suggestions": suggestions
             }
 

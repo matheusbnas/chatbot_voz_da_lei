@@ -11,7 +11,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
-import { chatApi, ChatMessage } from "@/services/api";
+import { chatApi, ChatMessage, audioApi } from "@/services/api";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -19,7 +19,10 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -116,8 +119,149 @@ export default function ChatPage() {
     chatApi.getSuggestions().then(setSuggestions).catch(console.error);
   };
 
+  const startRecording = async () => {
+    try {
+      setRecordingError(null);
+      
+      // Verificar se o navegador suporta MediaRecorder
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Seu navegador não suporta gravação de áudio. Use Chrome, Firefox ou Edge.');
+      }
+      
+      // Solicitar permissão para usar o microfone
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      
+      // Detectar o melhor formato suportado
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      }
+      
+      // Criar MediaRecorder
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType
+      });
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      // Quando receber dados de áudio
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      // Tratamento de erros
+      mediaRecorder.onerror = (event: any) => {
+        console.error('Erro no MediaRecorder:', event);
+        setRecordingError('Erro durante a gravação. Tente novamente.');
+        setIsRecording(false);
+      };
+      
+      // Quando parar a gravação
+      mediaRecorder.onstop = async () => {
+        // Parar todas as tracks do stream
+        stream.getTracks().forEach(track => track.stop());
+        
+        if (audioChunksRef.current.length === 0) {
+          setRecordingError('Nenhum áudio foi gravado. Tente novamente.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Combinar chunks de áudio
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        
+        // Converter para base64
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          // Remover o prefixo data:audio/...;base64,
+          const base64Data = base64Audio.split(',')[1];
+          
+          if (!base64Data) {
+            setRecordingError('Erro ao processar o áudio. Tente novamente.');
+            setIsLoading(false);
+            return;
+          }
+          
+          try {
+            setIsLoading(true);
+            setRecordingError(null);
+            
+            // Transcrever áudio usando o audioApi
+            const data = await audioApi.transcribe(base64Data, 'pt');
+            
+            // Inserir texto transcrito no input
+            if (data.text && data.text.trim()) {
+              setInput(data.text.trim());
+            } else {
+              setRecordingError('Não foi possível transcrever o áudio. Tente falar mais claramente.');
+            }
+          } catch (error: any) {
+            console.error('Erro ao transcrever:', error);
+            const errorMsg = error?.formattedMessage || error?.message || 'Erro ao transcrever áudio. Verifique sua conexão e tente novamente.';
+            setRecordingError(errorMsg);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+        
+        reader.onerror = () => {
+          setRecordingError('Erro ao processar o áudio gravado.');
+          setIsLoading(false);
+        };
+        
+        reader.readAsDataURL(audioBlob);
+      };
+      
+      // Iniciar gravação (coletar dados a cada 1 segundo)
+      mediaRecorder.start(1000);
+      setIsRecording(true);
+      
+    } catch (error: any) {
+      console.error('Erro ao iniciar gravação:', error);
+      let errorMessage = 'Não foi possível acessar o microfone.';
+      
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage = 'Permissão de microfone negada. Por favor, permita o acesso ao microfone nas configurações do navegador.';
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage = 'Nenhum microfone encontrado. Verifique se há um microfone conectado.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'Seu navegador não suporta gravação de áudio. Use Chrome, Firefox ou Edge.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setRecordingError(errorMessage);
+      setIsRecording(false);
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+  
   const toggleRecording = () => {
-    setIsRecording(!isRecording);
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
   };
 
   return (
@@ -304,15 +448,33 @@ export default function ChatPage() {
       {/* Input */}
       <div className="border-t border-gray-200 p-4 bg-white/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto">
+          {recordingError && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              {recordingError}
+              <button
+                onClick={() => setRecordingError(null)}
+                className="ml-2 text-red-600 hover:text-red-800 font-medium"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {isRecording && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-center gap-2">
+              <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></div>
+              Gravando... Clique novamente para parar
+            </div>
+          )}
           <div className="flex gap-2 items-end">
             <button
               onClick={toggleRecording}
+              disabled={isLoading}
               className={`p-3 rounded-xl transition-all flex-shrink-0 ${
                 isRecording
-                  ? "bg-red-100 hover:bg-red-200 text-red-600"
+                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
                   : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-              }`}
-              title="Gravar áudio"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={isRecording ? "Parar gravação" : "Gravar áudio"}
             >
               <Mic className="w-5 h-5" />
             </button>

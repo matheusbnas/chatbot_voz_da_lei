@@ -17,25 +17,47 @@ async def transcribe_audio(request: AudioTranscriptionRequest):
     Converte áudio em texto usando Whisper AI.
     """
     try:
+        # Validar entrada
+        if not request.audio_base64 or not request.audio_base64.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Dados de áudio não fornecidos"
+            )
+        
+        logger.debug(f"Recebendo requisição de transcrição (tamanho: {len(request.audio_base64)} caracteres)")
+        
         result = await audio_service.transcribe_audio(
             audio_data=request.audio_base64,
             language=request.language
         )
         
         if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
+            error_msg = result["error"]
+            logger.error(f"Erro na transcrição: {error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        if not result.get("text"):
+            logger.warning("Transcrição retornou texto vazio")
+            return AudioTranscriptionResponse(
+                text="",
+                confidence=None,
+                language=result.get("language", request.language)
+            )
         
         return AudioTranscriptionResponse(
             text=result["text"],
             confidence=result.get("confidence"),
-            language=result["language"]
+            language=result.get("language", request.language)
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao transcrever áudio: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao transcrever áudio: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao transcrever áudio: {str(e)}"
+        )
 
 
 @router.post("/tts")

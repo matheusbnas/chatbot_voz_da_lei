@@ -1,5 +1,7 @@
 import base64
 import os
+import time
+import uuid
 from typing import Optional, Dict, Any
 from loguru import logger
 import asyncio
@@ -69,42 +71,210 @@ class AudioService:
         Returns:
             Dict com texto transcrito e metadados
         """
-        if not AUDIO_AVAILABLE or not self.whisper_model:
+        if not AUDIO_AVAILABLE:
+            logger.error("Bibliotecas de áudio não disponíveis")
             return {
                 "text": "",
-                "error": "Serviço de transcrição não disponível"
+                "error": "Serviço de transcrição não disponível. Bibliotecas de áudio não instaladas."
+            }
+
+        if not self.whisper_model:
+            logger.error("Modelo Whisper não inicializado")
+            return {
+                "text": "",
+                "error": "Serviço de transcrição não disponível. Modelo Whisper não carregado."
             }
 
         try:
-            # Decodificar base64
-            audio_bytes = base64.b64decode(audio_data)
+            # Validar entrada
+            if not audio_data or not audio_data.strip():
+                logger.error("Dados de áudio vazios")
+                return {
+                    "text": "",
+                    "error": "Dados de áudio vazios"
+                }
+            # Gerar nome único para evitar conflitos em requisições simultâneas
+            unique_id = str(uuid.uuid4())[:8]
+            timestamp = int(time.time() * 1000)
 
-            # Salvar temporariamente
-            temp_path = self.audio_dir / "temp_input.wav"
-            with open(temp_path, "wb") as f:
+            # Decodificar base64
+            try:
+                audio_bytes = base64.b64decode(audio_data)
+                if len(audio_bytes) == 0:
+                    logger.error("Áudio decodificado está vazio")
+                    return {
+                        "text": "",
+                        "error": "Áudio inválido ou corrompido"
+                    }
+                logger.debug(f"Áudio decodificado: {len(audio_bytes)} bytes")
+            except Exception as decode_error:
+                logger.error(
+                    f"Erro ao decodificar base64: {str(decode_error)}")
+                return {
+                    "text": "",
+                    "error": f"Erro ao decodificar áudio: {str(decode_error)}"
+                }
+
+            # Salvar temporariamente com nome único
+            temp_input_path = self.audio_dir / \
+                f"temp_input_{timestamp}_{unique_id}"
+            temp_wav_path = self.audio_dir / \
+                f"temp_input_{timestamp}_{unique_id}.wav"
+
+            # Escrever arquivo e garantir que está fechado
+            with open(temp_input_path, "wb") as f:
                 f.write(audio_bytes)
+                f.flush()
+                os.fsync(f.fileno())  # Garantir que está escrito no disco
+
+            # Pequeno delay para garantir que o arquivo está liberado
+            await asyncio.sleep(0.1)
+
+            # Tentar detectar o formato e converter se necessário
+            # Whisper pode processar vários formatos diretamente, mas WAV é ideal
+            try:
+                from pydub import AudioSegment
+
+                # Tentar carregar o áudio (pydub detecta automaticamente o formato)
+                audio = AudioSegment.from_file(str(temp_input_path))
+
+                # Converter para WAV mono 16kHz (formato ideal para Whisper)
+                audio = audio.set_channels(1)  # Mono
+                audio = audio.set_frame_rate(16000)  # 16kHz
+
+                # Exportar como WAV diretamente
+                audio.export(str(temp_wav_path), format="wav")
+
+                # Limpar arquivo original após conversão bem-sucedida
+                try:
+                    if temp_input_path.exists():
+                        temp_input_path.unlink()
+                except Exception as e:
+                    logger.debug(
+                        f"Erro ao remover arquivo temporário original: {str(e)}")
+
+                logger.debug(
+                    f"Áudio convertido com sucesso para WAV: {temp_wav_path}")
+
+            except FileNotFoundError as ffmpeg_error:
+                # ffmpeg não encontrado - tentar usar Whisper diretamente
+                logger.warning(
+                    f"FFmpeg não encontrado: {str(ffmpeg_error)}. Tentando usar Whisper diretamente.")
+
+                # Whisper pode processar WebM e outros formatos diretamente
+                # Renomear o arquivo para ter extensão .webm para o Whisper reconhecer
+                if temp_input_path.exists():
+                    # Verificar se o arquivo tem extensão
+                    if not temp_input_path.suffix:
+                        # Adicionar extensão .webm (formato mais comum do MediaRecorder)
+                        temp_webm = temp_input_path.with_suffix('.webm')
+                        try:
+                            await asyncio.sleep(0.2)
+                            temp_input_path.rename(temp_webm)
+                            temp_wav_path = temp_webm
+                            logger.info(
+                                f"Usando arquivo WebM diretamente: {temp_wav_path}")
+                        except Exception as rename_err:
+                            logger.warning(
+                                f"Erro ao renomear: {str(rename_err)}")
+                            temp_wav_path = temp_input_path
+                    else:
+                        temp_wav_path = temp_input_path
+                        logger.info(
+                            f"Usando arquivo original: {temp_wav_path}")
+                else:
+                    return {
+                        "text": "",
+                        "error": "FFmpeg não encontrado e arquivo original não disponível. Instale o FFmpeg ou use um formato de áudio suportado."
+                    }
+
+            except Exception as conv_error:
+                logger.warning(f"Erro ao converter áudio: {str(conv_error)}")
+                # Se falhar a conversão, tentar usar o arquivo original
+                # Whisper pode aceitar alguns formatos diretamente (WebM, MP3, etc)
+                if temp_wav_path.exists() and temp_wav_path != temp_input_path:
+                    try:
+                        temp_wav_path.unlink()
+                    except:
+                        pass
+
+                # Se o arquivo original existe, tentar usar diretamente
+                if temp_input_path.exists():
+                    # Whisper suporta vários formatos: wav, mp3, m4a, ogg, webm, flac
+                    # Tentar usar o arquivo original
+                    temp_wav_path = temp_input_path
+                    logger.info(
+                        f"Usando arquivo original sem conversão: {temp_wav_path}")
+                else:
+                    logger.error(
+                        "Arquivo original não encontrado após erro de conversão")
+                    return {
+                        "text": "",
+                        "error": f"Erro ao processar áudio. Verifique se o FFmpeg está instalado ou use um formato suportado. Erro: {str(conv_error)}"
+                    }
+
+            # Verificar se o arquivo WAV existe antes de transcrever
+            if not temp_wav_path.exists():
+                logger.error(f"Arquivo WAV não encontrado: {temp_wav_path}")
+                return {
+                    "text": "",
+                    "error": "Erro ao processar arquivo de áudio"
+                }
+
+            logger.debug(f"Transcrevendo áudio: {temp_wav_path}")
 
             # Transcrever
-            result = await asyncio.to_thread(
-                self.whisper_model.transcribe,
-                str(temp_path),
-                language=language
-            )
+            try:
+                result = await asyncio.to_thread(
+                    self.whisper_model.transcribe,
+                    str(temp_wav_path),
+                    language=language
+                )
 
-            # Limpar arquivo temporário
-            temp_path.unlink(missing_ok=True)
+                if not result or "text" not in result:
+                    logger.error("Whisper retornou resultado inválido")
+                    return {
+                        "text": "",
+                        "error": "Erro ao transcrever áudio"
+                    }
+
+                logger.debug(
+                    f"Transcrição concluída: {len(result.get('text', ''))} caracteres")
+
+            except Exception as transcribe_error:
+                logger.error(
+                    f"Erro durante transcrição do Whisper: {str(transcribe_error)}")
+                return {
+                    "text": "",
+                    "error": f"Erro ao transcrever: {str(transcribe_error)}"
+                }
+
+            # Limpar arquivos temporários
+            try:
+                if temp_wav_path.exists():
+                    temp_wav_path.unlink()
+            except Exception as e:
+                logger.debug(
+                    f"Erro ao remover arquivo WAV temporário: {str(e)}")
+
+            try:
+                if temp_input_path.exists():
+                    temp_input_path.unlink()
+            except Exception as e:
+                logger.debug(
+                    f"Erro ao remover arquivo temporário original: {str(e)}")
 
             return {
-                "text": result["text"],
+                "text": result.get("text", ""),
                 "language": result.get("language", language),
                 "confidence": None  # Whisper não retorna confidence diretamente
             }
 
         except Exception as e:
-            logger.error(f"Erro ao transcrever áudio: {str(e)}")
+            logger.error(f"Erro ao transcrever áudio: {str(e)}", exc_info=True)
             return {
                 "text": "",
-                "error": str(e)
+                "error": f"Erro ao processar áudio: {str(e)}"
             }
 
     async def text_to_speech(
