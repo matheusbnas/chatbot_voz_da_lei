@@ -668,11 +668,17 @@ class LexMLClient:
                     "urn:lex:br:") else urn
 
             # Tentar diferentes endpoints do LexML para obter o XML completo
-            # Opção 1: Endpoint de documento (se disponível)
+            # O LexML pode fornecer o documento em diferentes formatos
             urls_to_try = [
-                f"https://www.lexml.gov.br/documento/{quote(urn)}",
+                # Tentar endpoint direto do documento (mais provável de ter o XML completo)
+                f"https://www.lexml.gov.br/documento/{quote(urn, safe='')}",
                 f"https://www.lexml.gov.br/documento/{urn}",
-                f"https://www.lexml.gov.br/busca/SRU?operation=searchRetrieve&query=urn%3D%22{quote(urn)}%22&recordSchema=lexml",
+                # Tentar com formato XML explícito
+                f"https://www.lexml.gov.br/documento/{quote(urn, safe='')}?formato=xml",
+                # Tentar endpoint de download/export
+                f"https://www.lexml.gov.br/documento/{quote(urn, safe='')}/xml",
+                # Última opção: buscar via SRU com schema lexml (pode retornar XML completo)
+                f"https://www.lexml.gov.br/busca/SRU?operation=searchRetrieve&query=urn%3D%22{quote(urn, safe='')}%22&recordSchema=lexml&maximumRecords=1",
             ]
 
             async with aiohttp.ClientSession() as session:
@@ -691,10 +697,19 @@ class LexMLClient:
                                 # Se for XML, processar
                                 if "xml" in content_type.lower():
                                     xml_content = await response.text()
-                                    # Extrair texto do XML
+                                    
+                                    # Verificar se é XML SRU (metadados) ou XML LexML (documento completo)
+                                    if "searchRetrieveResponse" in xml_content or "srw:" in xml_content:
+                                        # É XML SRU (metadados), não o documento completo
+                                        # Tentar extrair referência ao documento completo
+                                        logger.debug(f"Recebido XML SRU (metadados) para {urn}, tentando obter documento completo")
+                                        # Continuar para próxima URL
+                                        continue
+                                    
+                                    # Extrair texto do XML LexML
                                     text = self._extract_text_from_lexml_xml(
                                         xml_content)
-                                    if text:
+                                    if text and len(text) > 200:  # Texto significativo
                                         return text
 
                                 # Se for HTML, tentar extrair texto
@@ -727,64 +742,121 @@ class LexMLClient:
     def _extract_text_from_lexml_xml(self, xml_content: str) -> Optional[str]:
         """
         Extrair texto estruturado do XML LexML
-
+        
         O LexML usa uma estrutura XML específica com elementos como:
         - Artigo, Paragrafo, Inciso, Alinea
         - Texto, Rotulo, etc.
-
+        
         Args:
             xml_content: Conteúdo XML do LexML
-
+            
         Returns:
             Texto formatado ou None
         """
         try:
             root = ET.fromstring(xml_content)
-
-            # Namespaces comuns do LexML
-            namespaces = {
-                'lexml': 'http://www.lexml.gov.br/1.0',
-                '': 'http://www.lexml.gov.br/1.0'  # Namespace padrão
-            }
-
+            
+            # Verificar se é XML SRU (metadados) - não processar
+            if root.tag.endswith('searchRetrieveResponse') or 'srw:' in root.tag:
+                return None
+            
+            # Namespaces comuns do LexML (tentar diferentes variações)
+            namespaces_list = [
+                {'lexml': 'http://www.lexml.gov.br/1.0'},
+                {'': 'http://www.lexml.gov.br/1.0'},
+                {},  # Sem namespace
+            ]
+            
             text_parts = []
-
-            # Buscar artigos
-            for artigo in root.findall('.//Artigo', namespaces) + root.findall('.//artigo', namespaces):
-                rotulo = artigo.find('.//Rotulo', namespaces)
-                if rotulo is not None:
-                    text_parts.append(f"\n{rotulo.text}")
-
-                # Buscar parágrafos
-                for paragrafo in artigo.findall('.//Paragrafo', namespaces) + artigo.findall('.//paragrafo', namespaces):
-                    par_rotulo = paragrafo.find('.//Rotulo', namespaces)
-                    if par_rotulo is not None:
-                        text_parts.append(f"\n{par_rotulo.text}")
-
-                    # Buscar texto
-                    texto = paragrafo.find('.//Texto', namespaces)
-                    if texto is not None and texto.text:
-                        text_parts.append(texto.text)
-
-                # Buscar incisos
-                for inciso in artigo.findall('.//Inciso', namespaces) + artigo.findall('.//inciso', namespaces):
-                    inc_rotulo = inciso.find('.//Rotulo', namespaces)
-                    if inc_rotulo is not None:
-                        text_parts.append(f"\n{inc_rotulo.text}")
-
-                    texto = inciso.find('.//Texto', namespaces)
-                    if texto is not None and texto.text:
-                        text_parts.append(texto.text)
-
-            # Se não encontrou estrutura específica, extrair todo o texto
-            if not text_parts:
-                # Buscar todos os elementos de texto
-                for elem in root.iter():
+            
+            # Tentar com diferentes namespaces
+            for namespaces in namespaces_list:
+                # Buscar artigos (com diferentes variações de case)
+                for tag_variation in ['Artigo', 'artigo', 'ARTIGO']:
+                    artigos = root.findall(f'.//{tag_variation}', namespaces) if namespaces else root.findall(f'.//{tag_variation}')
+                    for artigo in artigos:
+                        # Buscar rótulo
+                        for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO', 'Label', 'label']:
+                            rotulo = artigo.find(f'.//{rotulo_tag}', namespaces) if namespaces else artigo.find(f'.//{rotulo_tag}')
+                            if rotulo is not None and rotulo.text:
+                                text_parts.append(f"\n{rotulo.text.strip()}")
+                                break
+                        
+                        # Buscar parágrafos
+                        for par_tag in ['Paragrafo', 'paragrafo', 'PARAGRAFO', 'Paragraphe']:
+                            paragrafos = artigo.findall(f'.//{par_tag}', namespaces) if namespaces else artigo.findall(f'.//{par_tag}')
+                            for paragrafo in paragrafos:
+                                # Rótulo do parágrafo
+                                for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO']:
+                                    par_rotulo = paragrafo.find(f'.//{rotulo_tag}', namespaces) if namespaces else paragrafo.find(f'.//{rotulo_tag}')
+                                    if par_rotulo is not None and par_rotulo.text:
+                                        text_parts.append(f"\n{par_rotulo.text.strip()}")
+                                        break
+                                
+                                # Texto do parágrafo
+                                for texto_tag in ['Texto', 'texto', 'TEXTO', 'Text', 'text', 'Conteudo', 'conteudo']:
+                                    texto = paragrafo.find(f'.//{texto_tag}', namespaces) if namespaces else paragrafo.find(f'.//{texto_tag}')
+                                    if texto is not None and texto.text and texto.text.strip():
+                                        text_parts.append(texto.text.strip())
+                                        break
+                        
+                        # Buscar incisos
+                        for inc_tag in ['Inciso', 'inciso', 'INCISO']:
+                            incisos = artigo.findall(f'.//{inc_tag}', namespaces) if namespaces else artigo.findall(f'.//{inc_tag}')
+                            for inciso in incisos:
+                                # Rótulo do inciso
+                                for rotulo_tag in ['Rotulo', 'rotulo', 'ROTULO']:
+                                    inc_rotulo = inciso.find(f'.//{rotulo_tag}', namespaces) if namespaces else inciso.find(f'.//{rotulo_tag}')
+                                    if inc_rotulo is not None and inc_rotulo.text:
+                                        text_parts.append(f"\n{inc_rotulo.text.strip()}")
+                                        break
+                                
+                                # Texto do inciso
+                                for texto_tag in ['Texto', 'texto', 'TEXTO']:
+                                    texto = inciso.find(f'.//{texto_tag}', namespaces) if namespaces else inciso.find(f'.//{texto_tag}')
+                                    if texto is not None and texto.text and texto.text.strip():
+                                        text_parts.append(texto.text.strip())
+                                        break
+                
+                # Se encontrou texto, parar de tentar outros namespaces
+                if text_parts:
+                    break
+            
+            # Se não encontrou estrutura específica, extrair todo o texto de forma genérica
+            if not text_parts or len(''.join(text_parts)) < 100:
+                # Função recursiva para extrair todo o texto
+                def extract_all_text(elem, depth=0):
+                    """Extrair todo o texto de um elemento recursivamente"""
+                    texts = []
+                    # Texto direto do elemento
                     if elem.text and elem.text.strip():
-                        text_parts.append(elem.text.strip())
-
-            return "\n".join(text_parts) if text_parts else None
-
+                        texts.append(elem.text.strip())
+                    # Texto dos filhos
+                    for child in elem:
+                        child_texts = extract_all_text(child, depth + 1)
+                        if child_texts:
+                            texts.extend(child_texts)
+                    # Texto após os filhos (tail)
+                    if elem.tail and elem.tail.strip():
+                        texts.append(elem.tail.strip())
+                    return texts
+                
+                all_texts = extract_all_text(root)
+                if all_texts:
+                    # Filtrar textos muito curtos ou que parecem ser metadados
+                    filtered_texts = [t for t in all_texts if len(t) > 10 and not t.isdigit()]
+                    if filtered_texts:
+                        text_parts.extend(filtered_texts)
+            
+            # Juntar e limpar
+            result = "\n".join(text_parts).strip() if text_parts else None
+            
+            # Verificar se o resultado é significativo (não apenas metadados)
+            if result and len(result) > 200:
+                return result
+            
+            return None
+            
         except ET.ParseError as e:
             logger.debug(f"Erro ao parsear XML LexML: {str(e)}")
             return None
