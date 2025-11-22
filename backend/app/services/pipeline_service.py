@@ -99,7 +99,7 @@ class PipelineService:
                         chunk_number=chunk_data.get("number"),
                         content=chunk_data["content"],
                         normalized_content=chunk_data["normalized_content"],
-                        metadata=chunk_data.get("metadata", {})
+                        meta_data=chunk_data.get("metadata", {})
                     )
                     self.db.add(chunk)
                     stats["chunks_created"] += 1
@@ -188,7 +188,7 @@ class PipelineService:
                         chunk_number=chunk_data.get("number"),
                         content=chunk_data["content"],
                         normalized_content=chunk_data["normalized_content"],
-                        metadata=chunk_data.get("metadata", {})
+                        meta_data=chunk_data.get("metadata", {})
                     )
                     self.db.add(chunk)
                     stats["chunks_created"] += 1

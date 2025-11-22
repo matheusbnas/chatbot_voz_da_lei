@@ -163,7 +163,7 @@ class CorpusBuilder:
                         answer=qa["answer"],
                         answer_source=qa["answer_source"],
                         question_type=qa["question_type"],
-                        metadata={
+                        meta_data={
                             "chunk_type": chunk.chunk_type,
                             "chunk_number": chunk.chunk_number
                         }

@@ -65,7 +65,7 @@ class Query(Base):
     response = Column(Text)
     simplified_response = Column(Text)
     audio_url = Column(String)  # URL do áudio de resposta
-    metadata = Column(JSON)
+    meta_data = Column(JSON)  # metadados adicionais (renomeado de 'metadata' para evitar conflito com SQLAlchemy)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relacionamentos
@@ -131,7 +131,7 @@ class LegislationChunk(Base):
     content = Column(Text, nullable=False)
     normalized_content = Column(Text)  # conteúdo normalizado
     # metadados adicionais (citações, referências, etc)
-    metadata = Column(JSON)
+    meta_data = Column(JSON)  # renomeado de 'metadata' para evitar conflito com SQLAlchemy
     embedding = Column(JSON)  # embedding vetorial (armazenado como JSON array)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -153,7 +153,7 @@ class TrainingCorpus(Base):
     answer_source = Column(Text)  # trecho da lei que originou a resposta
     # o_que_e, quem, quando, como, qual_pena, etc
     question_type = Column(String)
-    metadata = Column(JSON)  # metadados adicionais
+    meta_data = Column(JSON)  # metadados adicionais (renomeado de 'metadata' para evitar conflito com SQLAlchemy)
     embedding = Column(JSON)  # embedding da pergunta
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow,
