@@ -63,13 +63,13 @@ export default function Home() {
             icon={<Search className="w-10 h-10" />}
             title="Busca Avançada"
             description="Encontre leis por tema, autor ou região"
-            href="/search"
+            href="/publications"
           />
           <FeatureCard
             icon={<Volume2 className="w-10 h-10" />}
             title="Áudio & Voz"
             description="Ouça explicações e converse por voz"
-            href="/audio"
+            href="/chat"
           />
         </div>
 

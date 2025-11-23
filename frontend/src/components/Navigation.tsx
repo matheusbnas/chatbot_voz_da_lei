@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageSquare, BookOpen, Home, Sparkles } from 'lucide-react';
+import { MessageSquare, BookOpen, Home, Sparkles, FileText } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -10,6 +10,7 @@ export default function Navigation() {
   const navItems = [
     { id: 'home', label: 'Início', icon: Home, href: '/' },
     { id: 'chatbot', label: 'Chatbot', icon: MessageSquare, href: '/chat' },
+    { id: 'simplification', label: 'Simplificação', icon: FileText, href: '/simplify' },
     { id: 'publications', label: 'Projetos de Lei', icon: BookOpen, href: '/publications' },
   ];
 

@@ -249,7 +249,11 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📄 Licença
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+Este projeto está protegido por direitos autorais. Todos os direitos reservados.
+
+**É PROIBIDO** copiar, modificar, distribuir, vender ou usar comercialmente sem autorização prévia.
+
+Veja o arquivo [LICENSE](LICENSE) para mais detalhes sobre as restrições e como solicitar permissão de uso.
 
 ## 👥 Autores
 

@@ -5,8 +5,59 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 from datetime import datetime
 from urllib.parse import quote
+import html
 
 from app.core.config import settings
+
+
+def clean_xml_for_parsing(xml_content: str) -> str:
+    """
+    Limpar XML removendo ou substituindo entidades problemáticas
+    
+    Args:
+        xml_content: Conteúdo XML bruto
+        
+    Returns:
+        XML limpo e seguro para parsing
+    """
+    try:
+        # Decodificar entidades HTML conhecidas primeiro
+        xml_content = html.unescape(xml_content)
+        
+        # Entidades XML válidas que devem ser mantidas
+        valid_entities = {
+            '&amp;', '&lt;', '&gt;', '&quot;', '&apos;'
+        }
+        
+        # Padrão para entidades numéricas válidas
+        numeric_entity_pattern = r'&#\d+;|&#x[0-9a-fA-F]+;'
+        
+        # Encontrar e substituir entidades inválidas
+        def fix_entity(match):
+            entity = match.group(0)
+            # Se é entidade válida, manter
+            if entity in valid_entities:
+                return entity
+            # Se é entidade numérica válida, manter
+            if re.match(numeric_entity_pattern, entity, re.IGNORECASE):
+                return entity
+            # Caso contrário, é entidade inválida - substituir & por &amp;
+            # e manter o resto
+            return '&amp;' + entity[1:]
+        
+        # Substituir todas as entidades potencialmente problemáticas
+        xml_content = re.sub(r'&[^;]*;', fix_entity, xml_content)
+        
+        # Tratar & solto (não seguido de ;)
+        xml_content = re.sub(r'&(?![a-zA-Z#])', '&amp;', xml_content)
+        
+        return xml_content
+    except Exception as e:
+        logger.warning(f"Erro ao limpar XML: {str(e)}, usando fallback")
+        # Fallback: apenas decodificar HTML e substituir & soltos
+        xml_content = html.unescape(xml_content)
+        xml_content = re.sub(r'&(?![a-zA-Z#])', '&amp;', xml_content)
+        return xml_content
 
 
 class CamaraAPIClient:
@@ -273,7 +324,19 @@ class LexMLClient:
             Lista de documentos parseados
         """
         try:
-            root = ET.fromstring(xml_content)
+            # Limpar XML antes de parsear
+            xml_content = clean_xml_for_parsing(xml_content)
+            try:
+                root = ET.fromstring(xml_content)
+            except ET.ParseError as parse_error:
+                # Se ainda houver erro de parsing, tentar limpeza mais agressiva
+                if 'undefined entity' in str(parse_error).lower():
+                    logger.warning(f"Erro de entidade indefinida em _parse_lexml_xml, tentando limpeza mais agressiva: {str(parse_error)}")
+                    # Limpeza mais agressiva: substituir todas as entidades não padrão
+                    xml_content = re.sub(r'&(?!amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+;)[^;]*;', '&amp;', xml_content)
+                    root = ET.fromstring(xml_content)
+                else:
+                    raise
 
             # Namespaces do SRU
             namespaces = {
@@ -393,8 +456,19 @@ class LexMLClient:
                     response.raise_for_status()
                     xml_content = await response.text()
 
-                    # Parsear XML
-                    root = ET.fromstring(xml_content)
+                    # Limpar XML antes de parsear
+                    xml_content = clean_xml_for_parsing(xml_content)
+                    try:
+                        root = ET.fromstring(xml_content)
+                    except ET.ParseError as parse_error:
+                        # Se ainda houver erro de parsing, tentar limpeza mais agressiva
+                        if 'undefined entity' in str(parse_error).lower():
+                            logger.warning(f"Erro de entidade indefinida na busca LexML, tentando limpeza mais agressiva: {str(parse_error)}")
+                            # Limpeza mais agressiva: substituir todas as entidades não padrão
+                            xml_content = re.sub(r'&(?!amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+;)[^;]*;', '&amp;', xml_content)
+                            root = ET.fromstring(xml_content)
+                        else:
+                            raise
                     namespaces = {'srw': 'http://www.loc.gov/zing/srw/'}
 
                     # Obter número total de registros
@@ -718,7 +792,19 @@ class LexMLClient:
             Texto formatado ou None
         """
         try:
-            root = ET.fromstring(xml_content)
+            # Limpar XML antes de parsear
+            xml_content = clean_xml_for_parsing(xml_content)
+            try:
+                root = ET.fromstring(xml_content)
+            except ET.ParseError as parse_error:
+                # Se ainda houver erro de parsing, tentar limpeza mais agressiva
+                if 'undefined entity' in str(parse_error).lower():
+                    logger.warning(f"Erro de entidade indefinida ao extrair texto LexML, tentando limpeza mais agressiva: {str(parse_error)}")
+                    # Limpeza mais agressiva: substituir todas as entidades não padrão
+                    xml_content = re.sub(r'&(?!amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+;)[^;]*;', '&amp;', xml_content)
+                    root = ET.fromstring(xml_content)
+                else:
+                    raise
 
             # Verificar se é XML SRU (metadados) - não processar
             if root.tag.endswith('searchRetrieveResponse') or 'srw:' in root.tag:
