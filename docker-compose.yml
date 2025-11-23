@@ -3,7 +3,9 @@ version: "3.8"
 services:
   # Backend API
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: development
     container_name: vozdalei-backend
     ports:
       - "8000:8000"
@@ -21,7 +23,9 @@ services:
 
   # Frontend Next.js
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: development
     container_name: vozdalei-frontend
     ports:
       - "3000:3000"
@@ -39,7 +43,7 @@ services:
     environment:
       - POSTGRES_USER=vozdalei
       - POSTGRES_PASSWORD=vozdalei123
-      - POSTGRES_DB=vozdalei
+      - POSTGRES_DB=vozdalei_bd
     ports:
       - "5432:5432"
     volumes:
