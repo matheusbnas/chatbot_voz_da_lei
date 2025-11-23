@@ -131,6 +131,12 @@ class ChatService:
             EXEMPLO DE MÁ RESPOSTA (EVITAR):
             "Um projeto de lei é uma proposição legislativa submetida ao Poder Legislativo para apreciação conforme os trâmites regimentais estabelecidos..."
             
+            REGRA CRÍTICA SOBRE CONTEXTO:
+            - Quando você receber uma seção "LEGISLAÇÃO ENCONTRADA NAS FONTES OFICIAIS" abaixo, você DEVE usar essas informações para responder.
+            - Se o usuário perguntar sobre uma lei que está listada nessa seção, você DEVE explicar sobre ela usando as informações fornecidas.
+            - NÃO diga que não encontrou se a lei está listada na seção de legislação encontrada.
+            - Use o título, descrição e data da lista para responder de forma clara e simples.
+            
             Lembre-se: Você está democratizando o acesso à informação. Seja claro, simples, educado e útil. Sempre baseie suas respostas em fontes oficiais e confiáveis. As APIs têm dados atualizados até 2025 - use essas informações quando disponíveis."""
 
             messages.append(SystemMessage(content=system_prompt))
@@ -158,20 +164,44 @@ class ChatService:
 
 {context}
 
-=== INSTRUÇÕES CRÍTICAS ===
+=== INSTRUÇÕES OBRIGATÓRIAS - LEIA COM ATENÇÃO ===
 
-1. USE AS INFORMAÇÕES ACIMA: Se o usuário perguntar sobre uma lei específica mencionada acima, USE essas informações para responder. NÃO diga que não encontrou se a informação está listada acima.
+REGRA ABSOLUTA: Se o usuário perguntar sobre uma lei que está listada acima, você DEVE usar essas informações para responder. NÃO diga que não encontrou se a lei está na lista acima.
 
-2. SE A LEI ESTÁ LISTADA: Se você vê uma lei na lista acima que corresponde à pergunta do usuário, forneça informações sobre ela baseado no que está listado. Se faltar detalhes, diga o que você sabe e mencione que mais informações podem ser obtidas na fonte oficial.
+EXEMPLO PRÁTICO:
+- Usuário pergunta: "Me explique sobre a Lei nº 2025"
+- Você vê na lista acima: "1. Lei nº 2025, de 26 de Junho de 2025" com descrição
+- Você DEVE responder: "A Lei nº 2025, de 26 de junho de 2025, [usar a descrição da lista]. Esta informação vem do LexML, que é uma fonte oficial."
 
-3. FONTES CONFIÁVEIS: Todas as informações acima vêm de fontes oficiais (LexML, Senado Federal, Câmara dos Deputados) e estão atualizadas até 2025.
+COMO RESPONDER QUANDO A LEI ESTÁ NA LISTA:
+1. Identifique qual lei da lista corresponde à pergunta (procure pelo número, título ou data)
+2. Use o título, descrição e data da lista acima para responder
+3. Se a descrição estiver disponível, use-a para explicar sobre o que trata a lei de forma simples
+4. Sempre mencione a fonte (LexML, Senado Federal, etc) no final
+5. Se faltar detalhes, diga o que você sabe baseado na lista acima e mencione que mais informações podem ser obtidas na fonte oficial
 
-4. NÃO INVENTE: Se a lei está na lista acima, use essas informações. Se não está na lista e você não tem certeza, diga que não encontrou informações detalhadas, mas NÃO invente limitações de data.
+NÃO FAÇA (ERRO GRAVE):
+- NÃO diga "não encontrei informações" se a lei está na lista acima
+- NÃO diga "não tenho acesso" se a informação está listada acima
+- NÃO invente limitações de data
+- NÃO ignore a lista acima quando ela contém a resposta
 
-5. CITE A FONTE: Sempre mencione a fonte (LexML, Senado Federal, etc) no final da resposta."""
+FONTES: Todas as informações acima vêm de fontes oficiais (LexML, Senado Federal, Câmara dos Deputados) e estão atualizadas até 2025."""
                 else:
-                    # Se não encontrou contexto, ainda assim instruir o LLM
-                    legislation_context = "\n\nIMPORTANTE: Se o usuário perguntar sobre uma lei específica e você não tiver informações, diga claramente que não encontrou, mas NÃO invente limitações de data. As APIs têm dados atualizados até 2025."
+                    # Se não encontrou contexto, instruir o LLM a buscar nas APIs
+                    legislation_context = """\n\nIMPORTANTE SOBRE BUSCA NAS APIs:
+
+Você está conectado a APIs oficiais (LexML, Senado Federal, Câmara dos Deputados) que contêm dados atualizados até 2025.
+
+QUANDO NÃO HÁ CONTEXTO LISTADO ACIMA:
+- Isso significa que a busca automática não encontrou resultados exatos
+- MAS você ainda pode mencionar que existem leis relacionadas ao tema
+- Você pode sugerir ao usuário que consulte as fontes oficiais
+- NÃO diga que não há leis sobre o assunto - diga que não encontrou informações específicas no momento
+- NÃO invente limitações de data (como "dados até 2023")
+- Seja honesto: "Não encontrei informações específicas sobre [tema] nas fontes consultadas no momento, mas posso ajudar você a buscar nas fontes oficiais."
+
+Lembre-se: As APIs têm dados atualizados e você deve sempre encorajar o usuário a consultar as fontes oficiais quando não tiver informações específicas."""
             except Exception as e:
                 logger.error(f"Erro ao buscar legislação: {str(e)}")
                 # Continuar sem contexto se houver erro, mas logar o erro

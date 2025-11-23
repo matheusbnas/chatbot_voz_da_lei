@@ -948,55 +948,127 @@ class SenadoAPIClient:
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Buscar legislação no Senado (método de compatibilidade)
+        Buscar legislação no Senado usando endpoints oficiais
 
         Args:
             keywords: Palavras-chave para busca
             year: Ano da legislação
-            tipo: Tipo de legislação (PLS, PEC, etc)
+            tipo: Tipo de legislação (LEI, DEC, MPV, etc)
             limit: Limite de resultados
 
         Returns:
             Lista de legislações encontradas
         """
         try:
-            # Se tem keywords, usar busca por palavra-chave
+            # Se tem keywords, usar endpoint oficial de legislação
             if keywords:
-                if tipo and tipo in ["PLS", "PEC", "PLC"]:
-                    # Buscar em matérias
-                    resultados = await self.buscar_por_palavra_chave(
-                        palavra_chave=keywords,
-                        tipo="materia",
-                        ano=year,
-                        quantidade=limit
-                    )
-                else:
-                    # Buscar em normas
-                    resultados = await self.buscar_por_palavra_chave(
-                        palavra_chave=keywords,
-                        tipo="norma",
-                        ano=year,
-                        quantidade=limit
-                    )
-                return resultados[:limit]
+                try:
+                    # Expandir termos comuns (ex: AI -> inteligência artificial)
+                    expanded_keywords = keywords
+                    keywords_lower = keywords.lower()
+                    if 'ai' in keywords_lower or 'inteligência artificial' in keywords_lower or 'inteligencia artificial' in keywords_lower:
+                        expanded_keywords = f"{keywords} inteligência artificial IA"
 
-            # Se não tem keywords, listar por ano/tipo
-            if tipo and tipo in ["PLS", "PEC", "PLC"]:
-                # Buscar matérias
-                resultado = await self.listar_materias(
+                    # Buscar legislações recentes (últimos 5 anos se não especificado ano)
+                    search_years = [year] if year else [
+                        2025, 2024, 2023, 2022, 2021]
+                    all_normas = []
+
+                    # Limitar a 3 anos para não sobrecarregar
+                    for search_year in search_years[:3]:
+                        try:
+                            legislacao_result = await self.legislacao_lista(
+                                ano=search_year,
+                                tipo=tipo if tipo else None,
+                                quantidade=limit * 2
+                            )
+
+                            # Extrair normas
+                            normas = []
+                            if isinstance(legislacao_result, dict):
+                                normas = legislacao_result.get(
+                                    "normas", legislacao_result.get("dados", []))
+                            elif isinstance(legislacao_result, list):
+                                normas = legislacao_result
+
+                            all_normas.extend(normas)
+
+                            # Se já encontrou resultados suficientes, parar
+                            if len(all_normas) >= limit * 3:
+                                break
+                        except Exception as e:
+                            logger.debug(
+                                f"Erro ao buscar legislação do ano {search_year}: {str(e)}")
+                            continue
+
+                    # Filtrar por palavras-chave (tentar todas as variações)
+                    keywords_variations = [
+                        keywords.lower(),
+                        expanded_keywords.lower(),
+                        'inteligência artificial',
+                        'inteligencia artificial',
+                        'ia',
+                        'ai'
+                    ]
+
+                    filtered_normas = []
+                    for n in all_normas:
+                        descricao = str(n.get("descricao", "")).lower()
+                        titulo = str(n.get("titulo", "")).lower()
+                        nome = str(n.get("nome", "")).lower()
+                        texto_completo = f"{descricao} {titulo} {nome}"
+
+                        # Verificar se alguma variação da keyword está presente
+                        for kw in keywords_variations:
+                            if kw in texto_completo:
+                                filtered_normas.append(n)
+                                break
+
+                    # Se não encontrou com filtro, retornar algumas normas recentes
+                    if not filtered_normas and all_normas:
+                        return all_normas[:limit]
+
+                    return filtered_normas[:limit]
+
+                except Exception as e:
+                    logger.debug(
+                        f"Erro ao buscar legislação por keywords: {str(e)}")
+                    # Fallback: buscar diretamente por ano/tipo
+                    pass
+
+            # Se não tem keywords ou erro, listar por ano/tipo usando endpoint oficial
+            try:
+                legislacao_result = await self.legislacao_lista(
                     ano=year,
-                    sigla=tipo,
+                    tipo=tipo if tipo else None,
                     quantidade=limit
                 )
-                return resultado.get("materias", [])[:limit]
-            else:
-                # Buscar normas
-                resultado = await self.listar_normas(
-                    ano=year,
-                    tipo=tipo,
-                    quantidade=limit
-                )
-                return resultado.get("normas", [])[:limit]
+
+                normas = []
+                if isinstance(legislacao_result, dict):
+                    normas = legislacao_result.get(
+                        "normas", legislacao_result.get("dados", []))
+                elif isinstance(legislacao_result, list):
+                    normas = legislacao_result
+
+                return normas[:limit]
+            except Exception as e:
+                logger.debug(f"Erro ao buscar legislação: {str(e)}")
+                # Fallback para métodos legados apenas se endpoint oficial falhar
+                if tipo and tipo in ["PLS", "PEC", "PLC"]:
+                    resultado = await self.listar_materias(
+                        ano=year,
+                        sigla=tipo,
+                        quantidade=limit
+                    )
+                    return resultado.get("materias", [])[:limit]
+                else:
+                    resultado = await self.listar_normas(
+                        ano=year,
+                        tipo=tipo,
+                        quantidade=limit
+                    )
+                    return resultado.get("normas", [])[:limit]
 
         except Exception as e:
             logger.error(f"Erro ao buscar legislação: {str(e)}")

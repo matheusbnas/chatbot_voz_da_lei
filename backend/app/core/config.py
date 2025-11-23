@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql://vozdalei:vozdalei123@localhost:5432/vozdalei"
+    DATABASE_URL: str = "postgresql://vozdalei:vozdalei123@localhost:5432/vozdalei_db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
