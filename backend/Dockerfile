@@ -32,8 +32,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Create non-root user first
+RUN useradd -m -u 1000 appuser
+
+# Copy Python dependencies from builder to user's home
+COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application
 COPY . .
@@ -41,12 +44,14 @@ COPY . .
 # Make sure scripts are executable
 RUN chmod +x /app/scripts/*.py 2>/dev/null || true
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Change ownership to appuser
+RUN chown -R appuser:appuser /app /home/appuser/.local
+
+# Switch to non-root user
 USER appuser
 
-# Add local bin to PATH
-ENV PATH=/root/.local/bin:$PATH
+# Add local bin to PATH (now pointing to appuser's home)
+ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Expose port
 EXPOSE 8080
