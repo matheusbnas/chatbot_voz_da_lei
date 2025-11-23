@@ -143,21 +143,21 @@ export default function Home() {
                 Chat
               </Link>
               <Link
-                href="/search"
+                href="/publications"
                 className="text-gray-400 hover:text-white transition-colors"
               >
-                Buscar
+                Busca avançada
               </Link>
               <Link
-                href="/trending"
+                href="/simplify"
                 className="text-gray-400 hover:text-white transition-colors"
               >
-                Em Destaque
+                Simplifiquei
               </Link>
             </div>
             <div className="border-t border-gray-700 pt-6 w-full">
               <p className="text-gray-500 text-sm">
-                © 2024 Voz da Lei. Todos os direitos reservados.
+                © 2025 Voz da Lei. Todos os direitos reservados.
               </p>
             </div>
           </div>
