@@ -9,11 +9,14 @@ Sistema baseado em Inteligência Artificial que reconecta o cidadão brasileiro 
 - [Sobre o Projeto](#sobre-o-projeto)
 - [Funcionalidades](#funcionalidades)
 - [Tecnologias](#tecnologias)
-- [Início Rápido](#início-rápido)
+- [Instalação e Configuração](#instalação-e-configuração)
+- [Uso](#uso)
 - [Documentação](#documentação)
 - [Estrutura do Projeto](#estrutura-do-projeto)
+- [Roadmap](#roadmap)
 - [Contribuindo](#contribuindo)
 - [Licença](#licença)
+- [Equipe](#equipe)
 
 ## 🎯 Sobre o Projeto
 
@@ -88,17 +91,20 @@ O **Voz da Lei** é uma solução de IA cívica inclusiva que visa:
 - **Docker** - Containerização
 - **Docker Compose** - Orquestração
 
-## 🚀 Início Rápido
+## 🚀 Instalação e Configuração
 
 ### Pré-requisitos
 
-- Python 3.11+
-- Node.js 18+
-- Docker e Docker Compose (opcional, mas recomendado)
-- PostgreSQL (ou via Docker)
-- Redis (ou via Docker)
+Antes de começar, certifique-se de ter instalado:
 
-### Opção 1: Docker (Recomendado)
+- **Python 3.11+** - [Download](https://www.python.org/downloads/)
+- **Node.js 18+** - [Download](https://nodejs.org/)
+- **Docker e Docker Compose** (recomendado) - [Download](https://www.docker.com/)
+- **Git** - [Download](https://git-scm.com/)
+
+### Opção 1: Docker (Recomendado) 🐳
+
+A forma mais simples de executar o projeto é usando Docker Compose:
 
 ```bash
 # 1. Clone o repositório
@@ -106,67 +112,172 @@ git clone https://github.com/matheusbnas/chatbot_povo.git
 cd chatbot_povo
 
 # 2. Configure as variáveis de ambiente
+# Copie o arquivo de exemplo e edite com suas chaves de API
 cp backend/.env.example backend/.env
-# Edite backend/.env e adicione suas chaves de API
 
-# 3. Inicie os serviços
+# Edite backend/.env e adicione suas chaves de API:
+# OPENAI_API_KEY=sua_chave_aqui
+# GROQ_API_KEY=sua_chave_aqui
+# ANTHROPIC_API_KEY=sua_chave_aqui (opcional)
+
+# 3. Inicie todos os serviços
 docker-compose up -d
 
-# 4. Acesse
-# Frontend: http://localhost:3000
+# 4. Aguarde alguns segundos para os serviços iniciarem
+# Verifique os logs se necessário:
+docker-compose logs -f
+
+# 5. Acesse as aplicações:
+# Frontend: http://localhost:3002
 # Backend API: http://localhost:8000
-# Docs: http://localhost:8000/docs
+# Documentação da API: http://localhost:8000/docs
+```
+
+**Parar os serviços:**
+
+```bash
+docker-compose down
+```
+
+**Ver logs:**
+
+```bash
+docker-compose logs -f [serviço]  # Ex: backend, frontend, postgres
 ```
 
 ### Opção 2: Instalação Manual
 
-#### Backend
+#### Configuração do Backend
 
 ```bash
+# 1. Navegue até a pasta do backend
 cd backend
 
-# Criar ambiente virtual
+# 2. Crie um ambiente virtual Python
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
 
-# Instalar dependências
+# 3. Ative o ambiente virtual
+# Windows (PowerShell):
+.venv\Scripts\activate
+# Windows (CMD):
+.venv\Scripts\activate.bat
+# Linux/Mac:
+source .venv/bin/activate
+
+# 4. Instale as dependências
 pip install -r requirements.txt
 
-# Configurar variáveis de ambiente
+# 5. Configure as variáveis de ambiente
 cp .env.example .env
 # Edite .env com suas chaves de API
 
-# Iniciar servidor
-python -m uvicorn app.main:app --reload
+# 6. Certifique-se de que PostgreSQL e Redis estão rodando
+# Ou use Docker apenas para esses serviços:
+docker run -d --name postgres -e POSTGRES_PASSWORD=senha -p 5432:5432 postgres:15
+docker run -d --name redis -p 6379:6379 redis:7
+
+# 7. Execute as migrações do banco (se necessário)
+# alembic upgrade head
+
+# 8. Inicie o servidor
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### Frontend
+#### Configuração do Frontend
 
 ```bash
+# 1. Navegue até a pasta do frontend
 cd frontend
 
-# Instalar dependências
+# 2. Instale as dependências
 npm install
 
-# Configurar variáveis de ambiente
-cp .env.example .env.local
-# Edite .env.local se necessário
+# 3. Configure as variáveis de ambiente (opcional)
+# Crie .env.local se necessário:
+# NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# Iniciar servidor de desenvolvimento
+# 4. Inicie o servidor de desenvolvimento
 npm run dev
+
+# O frontend estará disponível em http://localhost:3000
 ```
 
-### Configuração de API Keys
+### 🔑 Configuração de API Keys
 
-Edite `backend/.env` e adicione:
+Para que o sistema funcione completamente, você precisa configurar as chaves de API no arquivo `backend/.env`:
 
 ```env
-OPENAI_API_KEY=sua_chave_aqui
-GROQ_API_KEY=sua_chave_aqui
+# APIs de Inteligência Artificial (obrigatório pelo menos uma)
+OPENAI_API_KEY=sua_chave_openai_aqui
+GROQ_API_KEY=sua_chave_groq_aqui
+ANTHROPIC_API_KEY=sua_chave_anthropic_aqui
+
+# Banco de Dados
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/vozdalei_bd
+
+# Redis (Cache)
+REDIS_URL=redis://localhost:6379
+
+# Segurança
+SECRET_KEY=gerar_uma_chave_secreta_forte_aqui
 ```
 
-Veja mais detalhes em [`backend/app/docs/CONFIGURAR_API.md`](backend/app/docs/CONFIGURAR_API.md)
+**Como obter as chaves:**
+
+- **OpenAI**: https://platform.openai.com/api-keys
+- **Groq**: https://console.groq.com/keys
+- **Anthropic**: https://console.anthropic.com/settings/keys
+
+**Gerar SECRET_KEY:**
+
+```bash
+# Python
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# OpenSSL
+openssl rand -hex 32
+```
+
+📖 **Documentação detalhada**: Veja [`backend/app/docs/CONFIGURAR_API.md`](backend/app/docs/CONFIGURAR_API.md) para mais informações.
+
+## 💻 Uso
+
+### Como Usar o Sistema
+
+1. **Acesse o Frontend**: Abra http://localhost:3002 (ou 3000 se instalado manualmente)
+
+2. **Chat Inteligente**:
+
+   - Digite perguntas sobre legislação brasileira
+   - O sistema buscará automaticamente em múltiplas fontes
+   - Receba respostas em linguagem simples
+
+3. **Simplificação de Textos**:
+
+   - Cole textos jurídicos complexos
+   - Receba versões simplificadas e acessíveis
+   - Ouça o texto simplificado em áudio
+
+4. **Busca Avançada**:
+   - Busque por leis, projetos e documentos
+   - Filtre por tipo, data, autoridade
+   - Explore resultados de forma intuitiva
+
+### Endpoints da API
+
+A documentação interativa da API está disponível em:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### Testando a API
+
+```bash
+# Exemplo: Testar endpoint de chat
+curl -X POST "http://localhost:8000/api/v1/chat/" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "O que é a Lei de Acesso à Informação?"}'
+```
 
 ## 📚 Documentação
 
@@ -249,15 +360,27 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📄 Licença
 
-Este projeto está protegido por direitos autorais. Todos os direitos reservados.
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para mais detalhes.
 
-**É PROIBIDO** copiar, modificar, distribuir, vender ou usar comercialmente sem autorização prévia.
+Você é livre para:
 
-Veja o arquivo [LICENSE](LICENSE) para mais detalhes sobre as restrições e como solicitar permissão de uso.
+- ✅ Usar o projeto para fins comerciais ou pessoais
+- ✅ Modificar e adaptar conforme necessário
+- ✅ Distribuir o código
+- ✅ Usar em projetos privados
 
-## 👥 Autores
+**Requisitos:**
 
-- **Matheus B. Nascimento** - [GitHub](https://github.com/matheusbnas)
+- Manter o aviso de copyright e a licença em todas as cópias
+- Incluir o arquivo LICENSE completo
+
+Para mais informações, consulte o arquivo [LICENSE](LICENSE).
+
+## 👥 Equipe
+
+- **Matheus B. Nascimento** - [GitHub](https://github.com/matheusbnas) - matheusbnas@gmail.com
+- **Alexandre Cruz** - Alexandrescruzwork@gmail.com
+- **Samir** - scarneirojose@gmail.com
 
 ## 🙏 Agradecimentos
 
