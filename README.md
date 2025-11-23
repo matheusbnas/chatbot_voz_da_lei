@@ -29,7 +29,7 @@ O **Voz da Lei** é uma solução de IA cívica inclusiva que visa:
 
 ### Público-Alvo
 
-- **Primário**: Classes C, D e E, comunidades periféricas, jovens eleitores
+- **Primário**: Classes B, C, D e E, comunidades periféricas, jovens eleitores
 - **Secundário**: ONGs, escolas públicas, câmaras municipais
 
 ## ✨ Funcionalidades
@@ -64,7 +64,6 @@ O **Voz da Lei** é uma solução de IA cívica inclusiva que visa:
 - **LexML**: Rede de Informação Legislativa e Jurídica
 - **Senado Federal**: API de dados abertos
 - **Câmara dos Deputados**: API de dados abertos
-- **Querido Diário**: Diários oficiais municipais
 
 ## 🛠️ Tecnologias
 
@@ -90,6 +89,8 @@ O **Voz da Lei** é uma solução de IA cívica inclusiva que visa:
 
 - **Docker** - Containerização
 - **Docker Compose** - Orquestração
+- **Coolify** - Deploy e gerenciamento (opcional)
+- **Vercel** - Deploy do frontend (opcional)
 
 ## 🚀 Instalação e Configuração
 
@@ -281,17 +282,40 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 
 ## 📚 Documentação
 
+### Documentação Geral
+
 - **[QUICKSTART.md](QUICKSTART.md)** - Guia de início rápido detalhado
 - **[ARQUITETURA.txt](ARQUITETURA.txt)** - Arquitetura do sistema
 - **[COMANDOS.txt](COMANDOS.txt)** - Comandos úteis para desenvolvimento
-- **Documentação Técnica**:
-  - [Configurar APIs](backend/app/docs/CONFIGURAR_API.md)
-  - [Como Coletar Dados](backend/docs/COMO_COLETAR.md)
-  - [Guia LexML](backend/docs/README_LEXML.md)
-  - [Guia Senado](backend/docs/SENADO_GUIA.md)
-  - [Queries Avançadas](backend/docs/QUERIES_AVANCADAS.md)
-- **Documentação de Negócio**: [docs/MODELO_NEGOCIO_ANALISE.md](docs/MODELO_NEGOCIO_ANALISE.md)
-- **API Docs**: http://localhost:8000/docs (quando o servidor estiver rodando)
+
+### Documentação Técnica
+
+- [Configurar APIs](backend/app/docs/CONFIGURAR_API.md)
+- [Como Coletar Dados](backend/docs/COMO_COLETAR.md)
+- [Guia LexML](backend/docs/README_LEXML.md)
+- [Guia Senado](backend/docs/SENADO_GUIA.md)
+- [Queries Avançadas](backend/docs/QUERIES_AVANCADAS.md)
+- [Criar Banco de Dados](docs/CRIAR_BANCO_DADOS.md)
+
+### Documentação de Deploy
+
+- [Deploy no Coolify](docs/COOLIFY_DEPLOY.md) - Guia completo para deploy no Coolify
+- [Deploy no Vercel](docs/DEPLOY_VERCEL.md) - Guia para deploy do frontend no Vercel
+- [Guia de Deploy](docs/README_DEPLOY.md) - Deploy em servidor próprio
+
+### Documentação de Negócio
+
+- [Modelo de Negócio](docs/MODELO_NEGOCIO_ANALISE.md) - Análise do modelo de negócio
+
+### Documentação Técnica Detalhada
+
+- [Comentário sobre IA](docs/COMENTARIO_IA_PROJETO.txt) - Implementação de Inteligência Artificial
+- [Comentário sobre Dados Abertos](docs/COMENTARIO_DADOS_ABERTOS.txt) - Fontes de dados abertos utilizadas
+
+### API Docs
+
+- **Swagger UI**: http://localhost:8000/docs (quando o servidor estiver rodando)
+- **ReDoc**: http://localhost:8000/redoc
 
 ## 📁 Estrutura do Projeto
 
@@ -329,24 +353,28 @@ chatbot_povo/
 - [x] Simplificação de textos
 - [x] Transcrição de áudio
 - [x] Integração com LexML, Senado e Câmara
+- [x] Busca avançada em múltiplas fontes
+- [x] Interface web responsiva
 
 ### Fase 2: Canais Inclusivos 🚧
 
-- [ ] Integração SMS
 - [ ] PWA (Progressive Web App)
 - [ ] Modo offline
+- [ ] Otimização para baixa conectividade
 
 ### Fase 3: Equidade e Acessibilidade 🚧
 
 - [ ] Módulo de equidade algorítmica
 - [ ] Acessibilidade completa (leitores de tela)
 - [ ] Análise de viés
+- [ ] Suporte a múltiplos idiomas
 
 ### Fase 4: Engagement 📋
 
 - [ ] Radar legislativo local
 - [ ] Retorno ao representante
 - [ ] Resumo automático de projetos
+- [ ] Notificações de projetos relevantes
 
 ## 🤝 Contribuindo
 
